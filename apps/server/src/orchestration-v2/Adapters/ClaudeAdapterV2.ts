@@ -69,6 +69,8 @@ import {
   type ThreadId,
   type ToolActivitySource,
 } from "@t3tools/contracts";
+import type { OrchestrationV2SubagentWorkflow } from "@t3tools/contracts";
+import { claudeWorkflowChanged, parseClaudeWorkflowProgress } from "./ClaudeWorkflowProgress.ts";
 
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -4009,6 +4011,7 @@ export function makeClaudeAdapterV2(
           readonly owner?: ActiveClaudeSubagent;
           readonly progress?: string;
           readonly result?: string;
+          readonly workflow?: OrchestrationV2SubagentWorkflow;
           readonly status: Extract<
             OrchestrationV2ExecutionNode["status"],
             "running" | "completed" | "failed" | "cancelled"
@@ -4087,6 +4090,15 @@ export function makeClaudeAdapterV2(
                     existingSubagent.task,
                   )
                 : existingSubagent.task;
+          const workflowName = input.workflow?.name ?? existingSubagent?.task.workflow?.name;
+          const workflow: OrchestrationV2SubagentWorkflow | undefined =
+            input.workflow === undefined
+              ? existingSubagent?.task.workflow
+              : {
+                  phases: input.workflow.phases,
+                  agents: input.workflow.agents,
+                  ...(workflowName === undefined ? {} : { name: workflowName }),
+                };
           const task = {
             ...(priorTask ?? {
               id: nodeId,
@@ -4127,6 +4139,7 @@ export function makeClaudeAdapterV2(
             ...(input.title === undefined ? {} : { title: input.title }),
             ...(input.model === undefined ? {} : { model: input.model }),
             ...(input.progress === undefined ? {} : { progress: input.progress }),
+            ...(workflow === undefined ? {} : { workflow }),
             ...(input.result === undefined ? {} : { result: input.result }),
             ...(isReopen ? { startedAt: now } : {}),
             completedAt: input.status === "running" ? null : (priorTask?.completedAt ?? now),
@@ -5091,6 +5104,36 @@ export function makeClaudeAdapterV2(
           }
         });
 
+        // A workflow keeps reporting progress after the turn that launched it
+        // settles, and idle frames otherwise only buffer wake evidence. Apply
+        // it to the registered subagent so the workflow view stays live.
+        const applyIdleClaudeWorkflowProgress = Effect.fnUntraced(function* (message: SDKMessage) {
+          if (message.type !== "system" || message.subtype !== "task_progress") return;
+          const parsed = parseClaudeWorkflowProgress(
+            (message as { readonly workflow_progress?: unknown }).workflow_progress,
+          );
+          const registered = (yield* Ref.get(sessionSubagentsByTaskId)).get(message.task_id);
+          if (
+            parsed === undefined ||
+            registered === undefined ||
+            registered.task.status !== "running" ||
+            !claudeWorkflowChanged(registered.task.workflow, parsed)
+          ) {
+            return;
+          }
+          const name = registered.task.workflow?.name;
+          registered.task = {
+            ...registered.task,
+            workflow: { ...parsed, ...(name === undefined ? {} : { name }) },
+            updatedAt: yield* DateTime.now,
+          };
+          yield* emitProviderEvent({
+            type: "subagent.updated",
+            driver: CLAUDE_PROVIDER,
+            subagent: registered.task,
+          });
+        });
+
         const bufferWakeMessage = Effect.fnUntraced(function* (wakeInput: {
           readonly nativeThreadId: string;
           readonly message: SDKMessage;
@@ -5536,6 +5579,7 @@ export function makeClaudeAdapterV2(
           }
           const context = yield* Ref.get(activeTurn);
           if (context === null) {
+            yield* applyIdleClaudeWorkflowProgress(message);
             // task_notification must buffer wake evidence while still tracked
             // on the roster; clearing first would drop the wake pin.
             if (message.type === "system" && message.subtype === "task_notification") {
@@ -5932,6 +5976,17 @@ export function makeClaudeAdapterV2(
                 ...(message.prompt === undefined ? {} : { prompt: message.prompt }),
                 ...(model === undefined ? {} : { model }),
                 ...(owner === undefined ? {} : { owner }),
+                ...(message.task_type === "local_workflow"
+                  ? {
+                      workflow: {
+                        phases: [],
+                        agents: [],
+                        ...(message.workflow_name === undefined
+                          ? {}
+                          : { name: message.workflow_name }),
+                      },
+                    }
+                  : {}),
                 title: message.description,
                 status: "running",
                 reopen: true,
@@ -5945,8 +6000,23 @@ export function makeClaudeAdapterV2(
               liveQuery.nativeThreadId,
               message.task_id,
             );
+            // Undeclared in the SDK types; set on local_workflow tasks.
+            const parsedWorkflow = parseClaudeWorkflowProgress(
+              (message as { readonly workflow_progress?: unknown }).workflow_progress,
+            );
+            const workflow =
+              parsedWorkflow !== undefined &&
+              claudeWorkflowChanged(
+                (
+                  context.subagentsByTaskId.get(message.task_id) ??
+                  (yield* Ref.get(sessionSubagentsByTaskId)).get(message.task_id)
+                )?.task.workflow,
+                parsedWorkflow,
+              )
+                ? parsedWorkflow
+                : undefined;
             if (
-              progress.length > 0 &&
+              (progress.length > 0 || workflow !== undefined) &&
               !context.ignoredTaskIds.has(message.task_id) &&
               !isBackgroundTask
             ) {
@@ -5954,7 +6024,8 @@ export function makeClaudeAdapterV2(
                 context,
                 taskId: message.task_id,
                 ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
-                progress,
+                ...(progress.length > 0 ? { progress } : {}),
+                ...(workflow === undefined ? {} : { workflow }),
                 status: "running",
               });
             }

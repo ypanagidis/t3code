@@ -471,6 +471,7 @@ import {
 } from "./chat/QueuedRunsControl";
 import { useLinkedThreadPullRequest } from "./ThreadStatusIndicators";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { PendingWorkflowProgress } from "./chat/WorkflowProgress";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
 import {
@@ -7175,6 +7176,14 @@ export default function ChatView(props: ChatViewProps) {
                 </Fragment>
               );
             }),
+      children: (
+        <PendingWorkflowProgress
+          parentRef={scopeThreadRef(environmentId, activeThread.id)}
+          childThreadIds={presentation.items.flatMap((item) =>
+            item.childThreadId === undefined ? [] : [item.childThreadId],
+          )}
+        />
+      ),
       actions: (
         <Button
           size="xs"
@@ -7189,6 +7198,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [
     activeBackgroundTasks,
     activeThread,
+    environmentId,
     handleStopBackgroundWork,
     isStoppingBackgroundWork,
     onOpenRelatedThread,

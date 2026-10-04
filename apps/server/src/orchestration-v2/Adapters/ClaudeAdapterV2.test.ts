@@ -6206,6 +6206,104 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("projects Claude workflow progress onto the workflow subagent, live after settle", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const TASK_ID = "task-workflow";
+        const TOOL_USE_ID = "toolu-workflow";
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-workflow"),
+            text: "Review the branch with a workflow.",
+            attachments: [],
+          }),
+        );
+        const progressFrame = (uuid: string, reviewState: string) =>
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_progress",
+            task_id: TASK_ID,
+            tool_use_id: TOOL_USE_ID,
+            description: "",
+            usage: { total_tokens: 0, tool_uses: 0, duration_ms: 0 },
+            workflow_progress: [
+              { type: "workflow_phase", index: 0, title: "Review" },
+              { type: "workflow_phase", index: 1, title: "Verify" },
+              {
+                type: "workflow_agent",
+                index: 0,
+                label: "review:bugs",
+                phaseIndex: 0,
+                state: reviewState,
+                startedAt: 1,
+                toolCalls: 3,
+              },
+              { type: "workflow_agent", index: 1, label: "verify", phaseIndex: 1, state: "start" },
+              { type: "workflow_log", index: 0, message: "ignored" },
+            ],
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          });
+        const frames = [
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_started",
+            task_id: TASK_ID,
+            tool_use_id: TOOL_USE_ID,
+            description: "Review changed files",
+            task_type: "local_workflow",
+            workflow_name: "review-changes",
+            uuid: "00000000-0000-4000-8000-000000000401",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+          progressFrame("00000000-0000-4000-8000-000000000402", "progress"),
+          // An unchanged snapshot is not re-sent.
+          progressFrame("00000000-0000-4000-8000-000000000403", "progress"),
+          // The launching turn settles while the workflow keeps running.
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000404",
+            result: "Started the review.",
+          }),
+        ];
+        for (const frame of frames) {
+          yield* Queue.offer(harness.sdkMessages, frame);
+        }
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "turn terminal");
+
+        const workflows = () =>
+          harness.events.flatMap((event) =>
+            event.type === "subagent.updated" ? [event.subagent.workflow] : [],
+          );
+        // Idle progress still reaches the subagent.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          progressFrame("00000000-0000-4000-8000-000000000405", "done"),
+        );
+        yield* awaitUntil(() => workflows().length === 3, "idle workflow progress");
+        assert.deepEqual(
+          workflows().map((workflow) => workflow?.agents.map((agent) => agent.status)),
+          [[], ["running", "pending"], ["completed", "pending"]],
+        );
+        assert.deepEqual(workflows().at(-1), {
+          name: "review-changes",
+          phases: [
+            { index: 0, title: "Review" },
+            { index: 1, title: "Verify" },
+          ],
+          agents: [
+            { index: 0, label: "review:bugs", phaseIndex: 0, status: "completed", toolCalls: 3 },
+            { index: 1, label: "verify", phaseIndex: 1, status: "pending" },
+          ],
+        });
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    ),
+  );
+
   it.effect.each(["requested", "observed-before", "observed-after", "inherit", "unknown"] as const)(
     "records the subagent model from %s without inheriting the parent override",
     (source) =>

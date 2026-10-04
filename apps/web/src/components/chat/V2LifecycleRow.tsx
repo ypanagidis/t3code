@@ -42,6 +42,7 @@ import { formatShortTimestamp } from "../../timestampFormat";
 import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { ProviderInstanceIcon, providerTextColorClassName } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
+import { WorkflowProgress } from "./WorkflowProgress";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 import { Button, InlineButton } from "../ui/button";
 import { T3Wordmark } from "../T3Wordmark";
@@ -484,7 +485,7 @@ function SubagentTimelineLink(props: {
   );
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
-  return (
+  const card = (
     <Tooltip>
       <TooltipTrigger
         delay={200}
@@ -521,6 +522,14 @@ function SubagentTimelineLink(props: {
         />
       </ThreadHoverCardPopup>
     </Tooltip>
+  );
+  return agent?.workflow === undefined ? (
+    card
+  ) : (
+    <div>
+      {card}
+      <WorkflowProgress workflow={agent.workflow} />
+    </div>
   );
 }
 
