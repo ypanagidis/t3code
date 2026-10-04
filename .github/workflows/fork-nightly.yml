@@ -1,0 +1,155 @@
+# Private fork nightly: replays this branch's patches onto upstream's newest
+# nightly tag and publishes a Linux AppImage as a release of this repo. Upstream
+# cuts a nightly at most every six hours, so a two-hourly check keeps pace; a
+# run with no new tag and no new patches stops after the rebase. The local
+# t3-code-fork-update timer installs the newest release.
+#
+# Nothing is pushed back: a rebase conflict fails this run (GitHub emails
+# you), and the fix is a local `git rebase origin/main` on `fork` + push.
+name: Fork nightly
+
+on:
+  schedule:
+    - cron: "23 */2 * * *"
+  push:
+    branches: [fork]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if nothing changed since the last release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fork-nightly
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/pingdotgg/t3code.git
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  nightly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      # Upstream's own workflows arrive with every rebase; only this one runs here.
+      - name: Keep upstream workflows disabled
+        run: |
+          gh workflow list --repo "$GITHUB_REPOSITORY" --all --json path,state \
+            --jq '.[] | select(.state == "active" and .path != ".github/workflows/fork-nightly.yml") | .path' |
+            while read -r path; do
+              gh workflow disable "$(basename "$path")" --repo "$GITHUB_REPOSITORY" || true
+            done
+
+      - uses: actions/checkout@v6
+        with:
+          ref: fork
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Rebase patches onto upstream main
+        id: rebase
+        run: |
+          git config user.name "fork-nightly"
+          git config user.email "fork-nightly@users.noreply.github.com"
+          tag="$(git ls-remote --tags --refs "$UPSTREAM" 'v*-nightly.*' |
+            sed -E 's#.*refs/tags/##' | sort -V | tail -1)"
+          git fetch --no-tags "$UPSTREAM" main:refs/upstream-main "refs/tags/${tag}:refs/upstream-nightly"
+          upstream_sha="$(git rev-parse 'refs/upstream-nightly^{commit}')"
+          # Only our commits move: `fork` may sit on a newer upstream main than
+          # the tag, and those upstream commits must not ride along.
+          patches_base="$(git merge-base HEAD refs/upstream-main)"
+          if ! git rebase --onto "$upstream_sha" "$patches_base"; then
+            git rebase --abort || true
+            echo "::error::Patches no longer apply on upstream ${upstream_sha}. Run 'git fetch origin && git rebase origin/main' on the fork branch locally, resolve, and push."
+            exit 1
+          fi
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          latest_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [[ "${{ inputs.force }}" != "true" && -n "$latest_tag" ]] &&
+            gh release view "$latest_tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body | grep -q "tree: $tree"; then
+            echo "Release $latest_tag already has tree $tree; nothing to build."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Upstream's nightly version with this run appended keeps nightly
+          # behaviour, sorts after the tag it builds on, and never collides.
+          version="${tag#v}0${GITHUB_RUN_NUMBER}"
+          {
+            echo "skip=false"
+            echo "version=$version"
+            echo "tree=$tree"
+            echo "upstream_sha=$upstream_sha"
+            echo "upstream_tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        if: steps.rebase.outputs.skip != 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install dependencies
+        if: steps.rebase.outputs.skip != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
+          vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - name: Build
+        if: steps.rebase.outputs.skip != 'true'
+        env:
+          # T3 Connect's public client config, the same values official builds ship.
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.T3CODE_CLERK_PUBLISHABLE_KEY }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.T3CODE_CLERK_JWT_TEMPLATE }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID }}
+          T3CODE_RELAY_URL: ${{ vars.T3CODE_RELAY_URL }}
+        run: |
+          node scripts/update-release-package-versions.ts "${{ steps.rebase.outputs.version }}"
+          vp run build:desktop
+          # electron-builder needs a feed for nightly versions, so this repo is
+          # it; the app can't read a private feed, so the local launcher sets
+          # T3CODE_DISABLE_AUTO_UPDATE and the t3-code-fork-update timer installs.
+          vp run dist:desktop:artifact \
+            --platform linux --target AppImage --arch x64 \
+            --build-version "${{ steps.rebase.outputs.version }}" \
+            --skip-build --verbose
+
+      - name: Publish release
+        if: steps.rebase.outputs.skip != 'true'
+        run: |
+          version="${{ steps.rebase.outputs.version }}"
+          shopt -s nullglob
+          appimages=(release/*.AppImage)
+          if (( ${#appimages[@]} != 1 )); then
+            echo "::error::Expected one AppImage in release/, found ${#appimages[@]}."
+            ls -la release || true
+            exit 1
+          fi
+          cp "${appimages[0]}" T3-Code.AppImage
+          notes="$(printf 'Upstream: %s (%s)\n\nPatches:\n%s\n\ntree: %s\n' \
+            "${{ steps.rebase.outputs.upstream_tag }}" \
+            "${{ steps.rebase.outputs.upstream_sha }}" \
+            "$(git log --format='- %s' "${{ steps.rebase.outputs.upstream_sha }}..HEAD")" \
+            "${{ steps.rebase.outputs.tree }}")"
+          gh release create "v$version" T3-Code.AppImage \
+            --repo "$GITHUB_REPOSITORY" --target fork \
+            --title "$version" --notes "$notes"
+
+      - name: Prune old releases
+        if: steps.rebase.outputs.skip != 'true'
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[5:][].tagName' |
+            while read -r tag; do
+              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            done
