@@ -732,6 +732,11 @@ export const make = Effect.gen(function* () {
       return retryInMs;
     };
 
+    // Trackpad pinch zooms the viewport like a browser (visual zoom), leaving
+    // layout untouched. Electron disables it by default and resets it per load.
+    window.webContents.on("did-finish-load", () => {
+      void window.webContents.setVisualZoomLevelLimits(1, 3);
+    });
     window.webContents.on("did-finish-load", () => {
       if (
         environment.isDevelopment &&
