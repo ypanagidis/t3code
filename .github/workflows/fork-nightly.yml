@@ -4,8 +4,10 @@
 # run with no new tag and no new patches stops after the rebase. The local
 # t3-code-fork-update timer installs the newest release.
 #
-# Nothing is pushed back: a rebase conflict fails this run (GitHub emails
-# you), and the fix is a local `git rebase origin/main` on `fork` + push.
+# `fork` is never pushed: a rebase conflict fails this run (GitHub emails you),
+# and the fix is a local `git rebase origin/main` on `fork` + push. The rebased
+# source goes to the `nightly` branch instead, which is what the Nix flake's
+# users follow; its package is built here and pushed to the attic cache.
 name: Fork nightly
 
 on:
@@ -35,7 +37,7 @@ env:
 jobs:
   nightly:
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 150
     steps:
       # Upstream's own workflows arrive with every rebase; only this one runs here.
       - name: Keep upstream workflows disabled
@@ -146,6 +148,54 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --target fork \
             --title "$version" --notes "$notes"
 
+      # The branch only moves once the package has built, and the AppImage is
+      # published either way; the last step fails the run if this did not pass.
+      - name: Free disk for Nix
+        if: steps.rebase.outputs.skip != 'true'
+        run: |
+          rm -rf node_modules release T3-Code.AppImage
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: cachix/install-nix-action@v31
+        if: steps.rebase.outputs.skip != 'true'
+
+      - uses: ryanccn/attic-action@v0
+        if: steps.rebase.outputs.skip != 'true'
+        with:
+          endpoint: https://cache.nix.devminer.xyz
+          cache: ypanagidis-t3code
+          token: ${{ secrets.ATTIC_TOKEN }}
+
+      - name: Build Nix package and move the nightly branch
+        id: nix
+        if: steps.rebase.outputs.skip != 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          # The version stamp was for the AppImage; the branch carries the rebased tree as is.
+          git checkout -- .
+          log="$RUNNER_TEMP/pnpm-deps.log"
+          # A rebase that moved the lockfile changes the dependency hash; the
+          # mismatch error names the right one.
+          if ! nix build .#default.pnpmDeps --no-link -L 2>&1 | tee "$log"; then
+            got="$(grep -oE 'got: *sha256-[A-Za-z0-9+/=]+' "$log" | grep -oE 'sha256-.*' | tail -1)"
+            if [[ -z "$got" ]]; then
+              echo "::error::Fetching the pnpm dependencies failed for a reason other than their hash."
+              exit 1
+            fi
+            echo "$got" > nix/pnpm-deps.hash
+            git add nix/pnpm-deps.hash
+          fi
+          nix build .#default -L
+          # One snapshot commit without .github/: GITHUB_TOKEN may not push the
+          # upstream workflow changes the rebased history carries, and Nix
+          # never reads them.
+          git rm -r -q --cached .github
+          snapshot="$(git commit-tree "$(git write-tree)" \
+            -m "nightly ${{ steps.rebase.outputs.version }}" \
+            -m "Source of the ${{ steps.rebase.outputs.version }} release: $(git rev-parse HEAD)")"
+          git push --force origin "$snapshot:refs/heads/nightly"
+
       - name: Prune old releases
         if: steps.rebase.outputs.skip != 'true'
         run: |
@@ -153,3 +203,9 @@ jobs:
             while read -r tag; do
               gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
             done
+
+      - name: Report a failed Nix build
+        if: steps.rebase.outputs.skip != 'true' && steps.nix.outcome == 'failure'
+        run: |
+          echo "::error::The AppImage was published, but the Nix package did not build; the nightly branch was not moved."
+          exit 1

@@ -5,8 +5,9 @@
 # the same Electron binary with ELECTRON_RUN_AS_NODE, which is what node-pty and
 # the other native addons load into.
 #
-# When pnpm-lock.yaml changes, `pnpmDepsHash` goes stale: set it to
-# lib.fakeHash, run `nix build .#default.pnpmDeps`, and paste the "got:" hash.
+# When pnpm-lock.yaml changes, nix/pnpm-deps.hash goes stale: run
+# `nix build .#default.pnpmDeps` and put the "got:" hash from the mismatch error
+# into that file. The nightly workflow does this on the `nightly` branch.
 {
   lib,
   stdenv,
@@ -33,7 +34,8 @@
   clerkCliOAuthClientId ? null,
   relayUrl ? null,
 
-  pnpmDepsHash ? "sha256-WZSV8+ugCLfls7jW7hPFoL4wYAffpER71zt2VhaTVzQ=",
+  # Kept in its own file so the nightly workflow can refresh it after a rebase.
+  pnpmDepsHash ? lib.fileContents ./pnpm-deps.hash,
 }:
 
 let

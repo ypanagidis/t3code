@@ -1,6 +1,18 @@
 {
   description = "T3 Code desktop app, built from source";
 
+  # The nightly workflow builds the `nightly` branch (github:ypanagidis/t3code/nightly) and pushes
+  # the package here. The cache is private: reading it needs an attic token with pull access in a
+  # netrc file (`machine cache.nix.devminer.xyz password <token>`, set via `netrc-file`). Applied for
+  # `nix build` and `nix run` on this flake after accepting it; as a NixOS input, add both lines and
+  # `netrc-file` to `nix.settings` instead.
+  nixConfig = {
+    extra-substituters = [ "https://cache.nix.devminer.xyz/ypanagidis-t3code" ];
+    extra-trusted-public-keys = [
+      "ypanagidis-t3code:biaVNFvZxaboN0Cnld1r8E1E4qBcyDJc2zfKJ8uXbM4="
+    ];
+  };
+
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
