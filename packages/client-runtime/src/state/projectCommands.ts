@@ -154,6 +154,11 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    // Read once, right after a project is added, to offer its submodules as projects too.
+    listSubmodules: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:list-submodules",
+      tag: WS_METHODS.projectsListSubmodules,
+    }),
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",
       tag: WS_METHODS.projectsWriteFile,

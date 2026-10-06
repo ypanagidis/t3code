@@ -263,6 +263,7 @@ describe("add project shared logic", () => {
         commandId: CommandId.make("command"),
         projectId: ProjectId.make("project"),
         workspaceRoot: "/work/repo",
+        projects: [],
       }),
     ).toMatchObject({
       type: "project.create",

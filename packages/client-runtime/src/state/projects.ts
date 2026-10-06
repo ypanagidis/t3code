@@ -155,6 +155,35 @@ export function inferProjectTitleFromPath(value: string): string {
   return segments.findLast(Boolean) ?? normalized;
 }
 
+/**
+ * Title for a project about to be added at `workspaceRoot`. Inside another project's folder it is
+ * that project's title and the path below it, so `enneo.git/ops-fe` rather than a bare `ops-fe`;
+ * the nearest enclosing project wins. Elsewhere it is the folder name.
+ */
+export function inferNestedProjectTitle(
+  projects: ReadonlyArray<{ readonly title: string; readonly workspaceRoot: string }>,
+  workspaceRoot: string,
+): string {
+  // Comparison only lowercases Windows paths and flips their separators, so an index into it is
+  // an index into the dispatch form too, which keeps the relative path's own casing.
+  const candidate = normalizeProjectPathForComparison(workspaceRoot);
+  let parent: { readonly title: string; readonly rootLength: number } | null = null;
+  for (const project of projects) {
+    const root = normalizeProjectPathForComparison(project.workspaceRoot).replace(/[\\/]+$/, "");
+    if (root.length === 0 || root.length <= (parent?.rootLength ?? 0)) continue;
+    if (candidate.startsWith(`${root}/`) || candidate.startsWith(`${root}\\`)) {
+      parent = { title: project.title, rootLength: root.length };
+    }
+  }
+  if (parent === null) return inferProjectTitleFromPath(workspaceRoot);
+  const relative = normalizeProjectPathForDispatch(workspaceRoot)
+    .slice(parent.rootLength + 1)
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join("/");
+  return relative.length === 0 ? parent.title : `${parent.title}/${relative}`;
+}
+
 export function appendBrowsePathSegment(currentPath: string, segment: string): string {
   const separator = preferredPathSeparator(currentPath);
   return `${getBrowseDirectoryPath(currentPath)}${segment}${separator}`;

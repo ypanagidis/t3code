@@ -18,7 +18,7 @@ import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
   findProjectByPath,
-  inferProjectTitleFromPath,
+  inferNestedProjectTitle,
   isExplicitRelativeProjectPath,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
@@ -354,12 +354,14 @@ export function buildProjectCreateCommand(input: {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
+  /** The environment's projects, so one added inside another is titled after it. */
+  readonly projects: ReadonlyArray<{ readonly title: string; readonly workspaceRoot: string }>;
 }): Extract<ProjectMutation, { type: "project.create" }> {
   return {
     type: "project.create",
     commandId: input.commandId,
     projectId: input.projectId,
-    title: inferProjectTitleFromPath(input.workspaceRoot),
+    title: inferNestedProjectTitle(input.projects, input.workspaceRoot),
     workspaceRoot: input.workspaceRoot,
     createWorkspaceRootIfMissing: true,
     defaultModelSelection: null,

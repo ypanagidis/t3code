@@ -119,12 +119,13 @@ import {
   findProjectByPath,
   getBrowseDirectoryPath,
   hasTrailingPathSeparator,
-  inferProjectTitleFromPath,
+  inferNestedProjectTitle,
   isExplicitRelativeProjectPath,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
 import { onOpenCommandPalette } from "../commandPaletteBus";
+import { offerSubmoduleAdoption } from "./AdoptSubmodulesDialog";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -2403,6 +2404,8 @@ function OpenCommandPaletteDialog(props: {
         cwd,
       );
       if (existing) {
+        // Adding a folder again is the way back to a submodule offer that was skipped.
+        offerSubmoduleAdoption({ environmentId: existing.environmentId, projectId: existing.id });
         const latestThread = getLatestThreadForProject(
           threads.filter((thread) => thread.environmentId === existing.environmentId),
           existing.id,
@@ -2440,7 +2443,10 @@ function OpenCommandPaletteDialog(props: {
         environmentId: input.environmentId,
         input: {
           projectId,
-          title: inferProjectTitleFromPath(cwd),
+          title: inferNestedProjectTitle(
+            projects.filter((project) => project.environmentId === input.environmentId),
+            cwd,
+          ),
           workspaceRoot: cwd,
           createWorkspaceRootIfMissing: true,
           defaultModelSelection: null,
@@ -2459,6 +2465,7 @@ function OpenCommandPaletteDialog(props: {
         }
         return;
       }
+      offerSubmoduleAdoption({ environmentId: input.environmentId, projectId });
 
       const navigationResult = await settlePromise(() =>
         handleNewThread(scopeProjectRef(input.environmentId, projectId)),
@@ -2696,7 +2703,10 @@ function OpenCommandPaletteDialog(props: {
       environmentId: addProjectCloneFlow.environmentId,
       input: {
         projectId,
-        title: inferProjectTitleFromPath(destinationPath),
+        title: inferNestedProjectTitle(
+          projects.filter((project) => project.environmentId === addProjectCloneFlow.environmentId),
+          destinationPath,
+        ),
         createdAt: new Date().toISOString(),
         remoteUrl: addProjectCloneFlow.remoteUrl,
         destinationPath,

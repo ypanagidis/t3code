@@ -510,6 +510,26 @@ export const ProjectCreateNewResult = Schema.Struct({
 });
 export type ProjectCreateNewResult = typeof ProjectCreateNewResult.Type;
 
+export const ProjectListSubmodulesInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ProjectListSubmodulesInput = typeof ProjectListSubmodulesInput.Type;
+
+/** A git submodule checked out somewhere below a project, which could be a project itself. */
+export const ProjectSubmodule = Schema.Struct({
+  workspaceRoot: TrimmedNonEmptyString,
+  /** Relative to the project's root, with forward slashes. */
+  relativePath: TrimmedNonEmptyString,
+  remoteUrl: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ProjectSubmodule = typeof ProjectSubmodule.Type;
+
+/** Empty for a project this environment does not have, or one without submodules. */
+export const ProjectListSubmodulesResult = Schema.Struct({
+  submodules: Schema.Array(ProjectSubmodule),
+});
+export type ProjectListSubmodulesResult = typeof ProjectListSubmodulesResult.Type;
+
 export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
   "ProjectWriteFileError",
   {

@@ -35,7 +35,7 @@ import {
 } from "@t3tools/client-runtime/state/filesystem";
 import {
   appendBrowsePathSegment,
-  inferProjectTitleFromPath,
+  inferNestedProjectTitle,
   isWindowsPlatform,
 } from "@t3tools/client-runtime/state/projects";
 import {
@@ -702,6 +702,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
         commandId: CommandId.make(uuidv4()),
         projectId,
         workspaceRoot,
+        projects: projects.filter((project) => project.environmentId === environment.environmentId),
       });
       const result = await createProject({
         environmentId: environment.environmentId,
@@ -719,7 +720,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
               params: {
                 environmentId: environment.environmentId,
                 projectId,
-                title: inferProjectTitleFromPath(workspaceRoot),
+                title: command.title,
               },
             },
           ],
@@ -1244,6 +1245,7 @@ export function AddProjectDestinationScreen(props: {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const projects = useProjects();
 
   const submitPath = useCallback(async () => {
     if (!environment || !remoteUrl || isBrowseNavigating || isSubmitting) return;
@@ -1263,7 +1265,10 @@ export function AddProjectDestinationScreen(props: {
       // The server creates the project and clones in the background; the
       // draft screen shows progress and holds Start until the files land.
       const projectId = ProjectId.make(uuidv4());
-      const title = inferProjectTitleFromPath(resolved.path);
+      const title = inferNestedProjectTitle(
+        projects.filter((project) => project.environmentId === environment.environmentId),
+        resolved.path,
+      );
       const startResult = await startProjectClone({
         environmentId: environment.environmentId,
         input: {
@@ -1325,6 +1330,7 @@ export function AddProjectDestinationScreen(props: {
     isSubmitting,
     navigation,
     pathInput,
+    projects,
     remoteUrl,
     startProjectClone,
   ]);

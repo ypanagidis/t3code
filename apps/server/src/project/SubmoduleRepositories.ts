@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
@@ -31,8 +32,22 @@ export class SubmoduleRepositories extends Context.Service<
       workspaceRoot: string,
       remoteUrl: string | null,
     ) => Effect.Effect<ReadonlyArray<RepositoryIdentity>>;
+    /**
+     * Submodules checked out below a checkout, at any depth, in the order Git walks them. Read
+     * afresh, for a caller about to act on the folders.
+     */
+    readonly listCheckedOut: (
+      workspaceRoot: string,
+    ) => Effect.Effect<ReadonlyArray<CheckedOutSubmodule>>;
   }
 >()("t3/project/SubmoduleRepositories") {}
+
+export interface CheckedOutSubmodule {
+  readonly workspaceRoot: string;
+  /** Relative to the checkout that was asked, with forward slashes. */
+  readonly relativePath: string;
+  readonly remoteUrl: string | null;
+}
 
 /**
  * Git resolves a `./` or `../` submodule URL against the superproject's remote, which is how
@@ -65,11 +80,21 @@ export function resolveSubmoduleUrl(
   return `${base}${separator}${rest}`;
 }
 
-function parseCheckedOut(stdout: string, root: string) {
+function parseCheckedOut(
+  stdout: string,
+  root: string,
+  path: Path.Path,
+): ReadonlyArray<CheckedOutSubmodule> {
   return stdout.split("\n").flatMap((line) => {
-    const [path, remoteUrl] = line.split("\t");
-    if (path === undefined || path.trim().length === 0) return [];
-    return [{ dir: `${root}/${path.trim()}`, remoteUrl: remoteUrl?.trim() || null }];
+    const [relativePath, remoteUrl] = line.split("\t");
+    if (relativePath === undefined || relativePath.trim().length === 0) return [];
+    return [
+      {
+        workspaceRoot: path.join(root, ...relativePath.trim().split("/")),
+        relativePath: relativePath.trim(),
+        remoteUrl: remoteUrl?.trim() || null,
+      },
+    ];
   });
 }
 
@@ -82,6 +107,7 @@ function parseDeclaredUrls(stdout: string): ReadonlyArray<string> {
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const path = yield* Path.Path;
 
   // A checkout without submodules, or without git, is simply empty.
   const git = (cwd: string, args: ReadonlyArray<string>) =>
@@ -92,20 +118,22 @@ export const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => ""),
       );
 
+  const listCheckedOut = (root: string) =>
+    git(root, ["submodule", "foreach", "--recursive", "--quiet", FOREACH_SCRIPT]).pipe(
+      Effect.map((stdout) => parseCheckedOut(stdout, root, path)),
+    );
+
   const discover = Effect.fn("SubmoduleRepositories.discover")(function* (
     root: string,
     remoteUrl: string | null,
   ) {
-    const checkedOut = parseCheckedOut(
-      yield* git(root, ["submodule", "foreach", "--recursive", "--quiet", FOREACH_SCRIPT]),
-      root,
-    );
+    const checkedOut = yield* listCheckedOut(root);
     // Declared ones cover submodules that were never initialised; each `.gitmodules` resolves
     // its relative URLs against the remote of the checkout it sits in.
     const declared = yield* Effect.forEach(
-      [{ dir: root, remoteUrl }, ...checkedOut],
+      [{ workspaceRoot: root, remoteUrl }, ...checkedOut],
       (checkout) =>
-        git(checkout.dir, [
+        git(checkout.workspaceRoot, [
           "config",
           "--file",
           ".gitmodules",
@@ -114,7 +142,7 @@ export const make = Effect.gen(function* () {
         ]).pipe(
           Effect.map((stdout) =>
             parseDeclaredUrls(stdout).map((url) => ({
-              dir: checkout.dir,
+              workspaceRoot: checkout.workspaceRoot,
               remoteUrl: resolveSubmoduleUrl(url, checkout.remoteUrl),
             })),
           ),
@@ -124,12 +152,12 @@ export const make = Effect.gen(function* () {
 
     const own = remoteUrl === null ? null : normalizeGitRemoteUrl(remoteUrl);
     const identities = new Map<string, RepositoryIdentity>();
-    for (const { dir, remoteUrl: url } of [...checkedOut, ...declared.flat()]) {
+    for (const { workspaceRoot, remoteUrl: url } of [...checkedOut, ...declared.flat()]) {
       if (url === null) continue;
       const identity = buildRepositoryIdentity({
         remoteName: "origin",
         remoteUrl: url,
-        rootPath: dir,
+        rootPath: workspaceRoot,
       });
       // A local path or an unrecognisable URL names nothing a host could list.
       if (identity.provider === undefined) continue;
@@ -150,6 +178,7 @@ export const make = Effect.gen(function* () {
 
   return SubmoduleRepositories.of({
     list: (workspaceRoot, remoteUrl) => Cache.get(cache, `${workspaceRoot}\0${remoteUrl ?? ""}`),
+    listCheckedOut,
   });
 });
 

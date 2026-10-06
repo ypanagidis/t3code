@@ -95,6 +95,10 @@ clone runs in the background: you can write your first prompt, and sending waits
 are in place. A toast tracks progress and lets you cancel; if the clone fails, retry it from the
 toast or from the banner above the composer.
 
+When a folder you add on web or desktop has checked-out Git submodules, T3 Code offers to add
+them as projects too; uncheck any you don't want. Pull requests for submodules you skip still
+appear on the Pull Requests page, under the project that checks them out.
+
 For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
 make your first commit before pushing.
