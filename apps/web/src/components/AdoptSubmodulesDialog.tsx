@@ -1,6 +1,6 @@
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ProjectId, ProjectSubmodule } from "@t3tools/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { create } from "zustand";
 
 import { findProjectByPath, inferProjectTitleFromPath } from "../lib/projectPaths";
@@ -49,33 +49,33 @@ function AdoptSubmodulesDialog({ environmentId, projectId }: Request) {
   });
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const projects = useProjects();
-  const [submodules, setSubmodules] = useState<ReadonlyArray<ProjectSubmodule> | null>(null);
+  // Taken once, when the offer opens, so the rows stay put while their projects are created.
+  const [candidates, setCandidates] = useState<ReadonlyArray<ProjectSubmodule> | null>(null);
   const [deselected, setDeselected] = useState<ReadonlySet<string>>(() => new Set());
   const [adding, setAdding] = useState(false);
+
+  const offer = useEffectEvent((submodules: ReadonlyArray<ProjectSubmodule>) => {
+    const known = projects.filter((project) => project.environmentId === environmentId);
+    const fresh = submodules.filter(
+      (submodule) => !findProjectByPath(known, submodule.workspaceRoot),
+    );
+    if (fresh.length === 0) finish();
+    else setCandidates(fresh);
+  });
 
   useEffect(() => {
     let cancelled = false;
     void listSubmodules({ environmentId, input: { projectId } }).then((result) => {
       if (cancelled) return;
       // Offering is a convenience: a failed read is the same as nothing to offer.
-      setSubmodules(result._tag === "Success" ? result.value.submodules : []);
+      offer(result._tag === "Success" ? result.value.submodules : []);
     });
     return () => {
       cancelled = true;
     };
   }, [environmentId, listSubmodules, projectId]);
 
-  const candidates = useMemo(() => {
-    const known = projects.filter((project) => project.environmentId === environmentId);
-    return (submodules ?? []).filter(
-      (submodule) => !findProjectByPath(known, submodule.workspaceRoot),
-    );
-  }, [environmentId, projects, submodules]);
-
-  useEffect(() => {
-    if (submodules !== null && candidates.length === 0 && !adding) finish();
-  }, [adding, candidates.length, submodules]);
-
+  if (candidates === null) return null;
   const selected = candidates.filter((submodule) => !deselected.has(submodule.workspaceRoot));
   const toggle = (keys: ReadonlyArray<string>, checked: boolean) => {
     const next = new Set(deselected);
@@ -115,7 +115,7 @@ function AdoptSubmodulesDialog({ environmentId, projectId }: Request) {
 
   return (
     <Dialog
-      open={candidates.length > 0}
+      open
       onOpenChange={(open) => {
         if (!open && !adding) finish();
       }}
