@@ -202,6 +202,7 @@ import { projectMutationOperation } from "./project/ProjectMutation.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
+import * as SubmoduleRepositories from "./project/SubmoduleRepositories.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
@@ -1196,6 +1197,7 @@ const makeWsRpcLayer = (
       const projectStore = yield* ProjectStore.ProjectStoreV2;
       const projectService = yield* ProjectService.ProjectService;
       const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+      const submoduleRepositories = yield* SubmoduleRepositories.SubmoduleRepositories;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -2993,6 +2995,21 @@ const makeWsRpcLayer = (
                 ),
               ),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [WS_METHODS.projectsListSubmodules]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsListSubmodules,
+            projectService.getShell(input.projectId).pipe(
+              Effect.flatMap(
+                Option.match({
+                  onNone: () => Effect.succeed([]),
+                  onSome: (project) => submoduleRepositories.listCheckedOut(project.workspaceRoot),
+                }),
+              ),
+              Effect.map((submodules) => ({ submodules })),
+              Effect.orDie,
+            ),
+            { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.projectCloneCancel]: (input) =>
           observeRpcEffect(

@@ -12,6 +12,7 @@ import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentShell } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { offerSubmoduleAdoption } from "../AdoptSubmodulesDialog";
 
 export function DesktopAppActivationCoordinator() {
   const primaryEnvironment = usePrimaryEnvironment();
@@ -65,6 +66,7 @@ export function DesktopAppActivationCoordinator() {
           const error = squashAtomCommandFailure(result);
           throw error instanceof Error ? error : new Error("T3 Code could not add the project.");
         }
+        offerSubmoduleAdoption({ environmentId, projectId });
         return projectId;
       },
       waitForProject: async (projectRef) => {

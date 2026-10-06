@@ -125,6 +125,7 @@ import {
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
 import { onOpenCommandPalette } from "../commandPaletteBus";
+import { offerSubmoduleAdoption } from "./AdoptSubmodulesDialog";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -2459,6 +2460,7 @@ function OpenCommandPaletteDialog(props: {
         }
         return;
       }
+      offerSubmoduleAdoption({ environmentId: input.environmentId, projectId });
 
       const navigationResult = await settlePromise(() =>
         handleNewThread(scopeProjectRef(input.environmentId, projectId)),

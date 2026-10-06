@@ -83,6 +83,14 @@ it.layer(NodeServices.layer)("SubmoduleRepositories", (it) => {
         "github.com/acme/nested",
       ]);
       expect(yield* submodules.list(root, null)).toEqual([]);
+      // Only what is actually on disk, which is what could become a project.
+      expect(yield* submodules.listCheckedOut(parent)).toEqual([
+        {
+          workspaceRoot: path.join(parent, "lib"),
+          relativePath: "lib",
+          remoteUrl: "https://github.com/acme/lib.git",
+        },
+      ]);
     }).pipe(Effect.provide(SubmoduleRepositories.layer)),
   );
 });
