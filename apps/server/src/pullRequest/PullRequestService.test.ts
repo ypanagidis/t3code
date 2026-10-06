@@ -23,6 +23,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
+import * as SubmoduleRepositories from "../project/SubmoduleRepositories.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import * as ForgejoCli from "../sourceControl/ForgejoCli.ts";
@@ -404,6 +405,7 @@ function makeService(input: {
   readonly providers: ReadonlyArray<PullRequestProviderApi>;
   readonly resolveHandle?: SourceControlProviderRegistry.SourceControlProviderRegistry["Service"]["resolveHandle"];
   readonly resolveRepositoryIdentity?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"]["resolve"];
+  readonly listSubmodules?: SubmoduleRepositories.SubmoduleRepositories["Service"]["list"];
 }) {
   // Built into the test's own scope rather than provided call by call: the marks store owns a
   // database, and `Effect.provide` would close it the moment the service was handed back.
@@ -429,6 +431,9 @@ function makeService(input: {
         }),
         Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
           resolve: input.resolveRepositoryIdentity ?? (() => Effect.succeed(null)),
+        }),
+        Layer.mock(SubmoduleRepositories.SubmoduleRepositories)({
+          list: input.listSubmodules ?? (() => Effect.succeed([])),
         }),
         SourceControlRateLimit.layer,
         // The real store over a database of its own, so the environment-kept marks are exercised
@@ -1143,6 +1148,68 @@ it.effect("reads a repository once when several worktrees share it", () =>
 
     assert.strictEqual(calls, 1);
     assert.strictEqual(result.entries.length, 1);
+  }),
+);
+
+it.effect("lists a submodule's repository as the project that checks it out", () =>
+  Effect.gen(function* () {
+    const listed: Array<{ cwd: string; repository: string }> = [];
+    const identity = (repository: string) =>
+      project({ id: "-", title: "-", workspaceRoot: "/-", repository }).repositoryIdentity!;
+    const service = yield* makeService({
+      projects: [
+        project({ id: "app", title: "app", workspaceRoot: "/app", repository: "acme/app" }),
+        project({
+          id: "shared",
+          title: "shared",
+          workspaceRoot: "/shared",
+          repository: "acme/shared",
+        }),
+      ],
+      listSubmodules: (workspaceRoot) =>
+        Effect.succeed(
+          workspaceRoot === "/app" ? [identity("acme/lib"), identity("acme/shared")] : [],
+        ),
+      providers: [
+        fakeProvider("github", {
+          listChangeRequests: (input) => {
+            listed.push({ cwd: input.cwd, repository: input.repository });
+            return Effect.succeed({
+              items: [changeRequest(1, "2026-07-02T00:00:00Z")],
+              truncated: false,
+              continues: true,
+            });
+          },
+          listChangeRequestStats: (input) =>
+            Effect.succeed(
+              input.changeRequests.map((ref) => ({ ...ref, additions: 1, deletions: 2 })),
+            ),
+        }),
+      ],
+    });
+
+    const result = yield* service.list({ state: "open" });
+
+    // An adopted submodule keeps its own project, and is read once.
+    assert.deepStrictEqual(
+      result.entries.map((entry) => `${entry.projectId} ${entry.repository}`).toSorted(),
+      ["app acme/app", "app acme/lib", "shared acme/shared"],
+    );
+    assert.deepStrictEqual(
+      listed.find(({ repository }) => repository === "acme/lib"),
+      { cwd: "/app", repository: "acme/lib" },
+    );
+
+    const stats = yield* service.listStats({
+      refs: [
+        { projectId: "app" as ProjectId, repository: "acme/app", number: 1 },
+        { projectId: "app" as ProjectId, repository: "acme/lib", number: 1 },
+      ],
+    });
+    assert.deepStrictEqual(
+      stats.stats.map((stat) => `${stat.projectId} ${stat.repository}`).toSorted(),
+      ["app acme/app", "app acme/lib"],
+    );
   }),
 );
 

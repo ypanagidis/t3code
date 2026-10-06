@@ -77,6 +77,7 @@ import { AllowGitHubReserve } from "../sourceControl/GitHubCli.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
+import * as SubmoduleRepositories from "../project/SubmoduleRepositories.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import {
@@ -636,6 +637,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* PullRequestProviderRegistry.PullRequestProviderRegistry;
   const projects = yield* ProjectService.ProjectService;
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const submodules = yield* SubmoduleRepositories.SubmoduleRepositories;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
   const filesViewedStore = yield* PullRequestFilesViewed.PullRequestFilesViewedRepository;
@@ -747,6 +749,23 @@ export const make = Effect.gen(function* () {
           { concurrency: REPOSITORY_CONCURRENCY },
         ),
       ),
+      // A submodule's repository is read through the project that checks it out, as that
+      // project. Appended after every project so one that is also adopted on its own keeps its
+      // own rows when the listing de-duplicates below.
+      Effect.flatMap((projects) =>
+        Effect.forEach(
+          projects,
+          (project) =>
+            submodules
+              .list(project.workspaceRoot, project.repositoryIdentity?.locator.remoteUrl ?? null)
+              .pipe(
+                Effect.map((identities) =>
+                  identities.map((repositoryIdentity) => ({ ...project, repositoryIdentity })),
+                ),
+              ),
+          { concurrency: REPOSITORY_CONCURRENCY },
+        ).pipe(Effect.map((nested) => [...projects, ...nested.flat()])),
+      ),
       Effect.flatMap((projects) =>
         refineUnknownProjectKinds(projects, filter).pipe(
           Effect.map((refinedProviders) => ({ refinedProviders, projects })),
@@ -832,16 +851,18 @@ export const make = Effect.gen(function* () {
   const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
-        const own = supported[0];
         const repository = ref.repository.trim();
         const host = ref.host?.trim().toLowerCase();
-        if (own !== undefined && own.repository.toLowerCase() === repository.toLowerCase()) {
-          // Hostless references only ever meant the project's own repository, and a hosted one
-          // naming it still is; either way the project serves itself.
-          if (host === undefined || host === own.host) return Effect.succeed(own);
-        }
+        // Hostless references only ever meant the project's own repository or one of its
+        // submodules', and a hosted one naming it still does; either way the project serves it.
+        const own = supported.find(
+          (candidate) =>
+            candidate.repository.toLowerCase() === repository.toLowerCase() &&
+            (host === undefined || host === candidate.host),
+        );
+        if (own !== undefined) return Effect.succeed(own);
         if (host === undefined) {
-          if (own === undefined) {
+          if (supported.length === 0) {
             return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
           }
           // The repository travels through the client, so it is checked against the project's
@@ -2467,23 +2488,28 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       if (input.refs.length === 0) return { stats: [] };
       const { supported } = yield* listWorkspaceProjects({});
-      const byProject = new Map(supported.map((project) => [project.project.id, project]));
+      // Keyed by repository too: a project also serves the repositories of its submodules.
+      const repositoryKey = (projectId: string, repository: string) =>
+        `${projectId} ${repository.trim().toLowerCase()}`;
+      const byRepository = new Map(
+        supported.map((project) => [
+          repositoryKey(project.project.id, project.repository),
+          project,
+        ]),
+      );
       const wanted = new Map<
         string,
         { readonly project: SupportedProject; readonly number: number }
       >();
       for (const ref of input.refs) {
-        const project = byProject.get(ref.projectId);
         // The repository travels through the client, so it is checked against the project's own
-        // remote rather than being handed to a provider verbatim.
-        if (
-          project === undefined ||
-          project.api.listChangeRequestStats === undefined ||
-          project.repository.toLowerCase() !== ref.repository.trim().toLowerCase()
-        ) {
+        // remotes rather than being handed to a provider verbatim.
+        const key = repositoryKey(ref.projectId, ref.repository);
+        const project = byRepository.get(key);
+        if (project === undefined || project.api.listChangeRequestStats === undefined) {
           continue;
         }
-        wanted.set(`${project.project.id} ${ref.number}`, { project, number: ref.number });
+        wanted.set(`${key} ${ref.number}`, { project, number: ref.number });
       }
       const byHost = new Map<string, Array<{ project: SupportedProject; number: number }>>();
       for (const entry of wanted.values()) {
