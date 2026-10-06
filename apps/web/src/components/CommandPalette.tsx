@@ -2404,6 +2404,8 @@ function OpenCommandPaletteDialog(props: {
         cwd,
       );
       if (existing) {
+        // Adding a folder again is the way back to a submodule offer that was skipped.
+        offerSubmoduleAdoption({ environmentId: existing.environmentId, projectId: existing.id });
         const latestThread = getLatestThreadForProject(
           threads.filter((thread) => thread.environmentId === existing.environmentId),
           existing.id,
