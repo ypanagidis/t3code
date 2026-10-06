@@ -119,7 +119,7 @@ import {
   findProjectByPath,
   getBrowseDirectoryPath,
   hasTrailingPathSeparator,
-  inferProjectTitleFromPath,
+  inferNestedProjectTitle,
   isExplicitRelativeProjectPath,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
@@ -2443,7 +2443,10 @@ function OpenCommandPaletteDialog(props: {
         environmentId: input.environmentId,
         input: {
           projectId,
-          title: inferProjectTitleFromPath(cwd),
+          title: inferNestedProjectTitle(
+            projects.filter((project) => project.environmentId === input.environmentId),
+            cwd,
+          ),
           workspaceRoot: cwd,
           createWorkspaceRootIfMissing: true,
           defaultModelSelection: null,
@@ -2700,7 +2703,10 @@ function OpenCommandPaletteDialog(props: {
       environmentId: addProjectCloneFlow.environmentId,
       input: {
         projectId,
-        title: inferProjectTitleFromPath(destinationPath),
+        title: inferNestedProjectTitle(
+          projects.filter((project) => project.environmentId === addProjectCloneFlow.environmentId),
+          destinationPath,
+        ),
         createdAt: new Date().toISOString(),
         remoteUrl: addProjectCloneFlow.remoteUrl,
         destinationPath,

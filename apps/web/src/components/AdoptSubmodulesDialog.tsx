@@ -3,7 +3,7 @@ import type { EnvironmentId, ProjectId, ProjectSubmodule } from "@t3tools/contra
 import { useEffect, useEffectEvent, useState } from "react";
 import { create } from "zustand";
 
-import { findProjectByPath, inferProjectTitleFromPath } from "../lib/projectPaths";
+import { findProjectByPath, inferNestedProjectTitle } from "../lib/projectPaths";
 import { newProjectId } from "../lib/utils";
 import { useProjects } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
@@ -94,7 +94,10 @@ function AdoptSubmodulesDialog({ environmentId, projectId }: Request) {
         environmentId,
         input: {
           projectId: newProjectId(),
-          title: inferProjectTitleFromPath(submodule.workspaceRoot),
+          title: inferNestedProjectTitle(
+            projects.filter((project) => project.environmentId === environmentId),
+            submodule.workspaceRoot,
+          ),
           workspaceRoot: submodule.workspaceRoot,
           defaultModelSelection: null,
         },

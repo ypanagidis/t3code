@@ -8,6 +8,7 @@ import {
   getBrowseLeafPathSegment,
   getBrowseParentPath,
   hasTrailingPathSeparator,
+  inferNestedProjectTitle,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
   isFilesystemBrowseQuery,
@@ -44,6 +45,26 @@ describe("projectPaths", () => {
     expect(inferProjectTitleFromPath("/repo/app/")).toBe("app");
     expect(inferProjectTitleFromPath("C:\\Work\\Repo\\")).toBe("Repo");
     expect(inferProjectTitleFromPath("/home/user\\project/")).toBe("user\\project");
+  });
+
+  it("titles a project inside another after the nearest enclosing one", () => {
+    const projects = [
+      { title: "enneo.git", workspaceRoot: "/home/a/d/gitlab.com/enneo/enneo.git/" },
+      { title: "enneo.git/ops-fe", workspaceRoot: "/home/a/d/gitlab.com/enneo/enneo.git/ops-fe" },
+      { title: "Work", workspaceRoot: "C:\\Work" },
+    ];
+    expect(inferNestedProjectTitle(projects, "/home/a/d/gitlab.com/enneo/enneo.git/api")).toBe(
+      "enneo.git/api",
+    );
+    expect(
+      inferNestedProjectTitle(projects, "/home/a/d/gitlab.com/enneo/enneo.git/ops-fe/libs/ui"),
+    ).toBe("enneo.git/ops-fe/libs/ui");
+    // Windows paths compare case-insensitively but keep their own casing in the title.
+    expect(inferNestedProjectTitle(projects, "c:\\work\\Repo\\App")).toBe("Work/Repo/App");
+    // A sibling that merely shares a prefix is not inside.
+    expect(inferNestedProjectTitle(projects, "/home/a/d/gitlab.com/enneo/enneo.github")).toBe(
+      "enneo.github",
+    );
   });
 
   it("detects browse queries across supported path styles", () => {

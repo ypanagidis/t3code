@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useRef } from "react";
 
 import { handleDesktopAppActivationRequest } from "../../desktopAppActivation";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
-import { findProjectByPath, inferProjectTitleFromPath } from "../../lib/projectPaths";
+import { findProjectByPath, inferNestedProjectTitle } from "../../lib/projectPaths";
 import { newProjectId } from "../../lib/utils";
 import { readProjects, waitForProject } from "../../state/entities";
 import { usePrimaryEnvironment } from "../../state/environments";
@@ -56,7 +56,10 @@ export function DesktopAppActivationCoordinator() {
           environmentId,
           input: {
             projectId,
-            title: inferProjectTitleFromPath(workspaceRoot),
+            title: inferNestedProjectTitle(
+              readProjects().filter((project) => project.environmentId === environmentId),
+              workspaceRoot,
+            ),
             workspaceRoot,
             createWorkspaceRootIfMissing: false,
             defaultModelSelection: null,
