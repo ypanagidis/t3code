@@ -537,8 +537,8 @@ const make = (options?: StartupOptions) =>
         ).pipe(Effect.map((targets): AutoBootstrapWelcomeTargets => targets)),
       });
       yield* Effect.logInfo("V2 orchestration recovery completed", recovery);
-      // Each pull fetches over the network, so it runs behind startup rather than holding every
-      // client on a slow or unreachable remote.
+      // Runs after activation: the status check fetches every enabled project's
+      // remote, and awaiting it here held command readiness for that long.
       yield* runStartupPhase(
         "projects.auto-pull",
         Effect.gen(function* () {
@@ -547,7 +547,9 @@ const make = (options?: StartupOptions) =>
           yield* autoPullProjects(projects, settings);
         }),
       ).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("Automatic project pull failed", { cause })),
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to load projects for automatic pull", { cause }),
+        ),
         forkParked,
       );
 
