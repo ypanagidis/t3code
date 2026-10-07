@@ -165,6 +165,7 @@ jobs:
           endpoint: https://cache.nix.devminer.xyz
           cache: ypanagidis-t3code
           token: ${{ secrets.ATTIC_TOKEN }}
+          push-args: --jobs 4
 
       - name: Build Nix package and move the nightly branch
         id: nix
