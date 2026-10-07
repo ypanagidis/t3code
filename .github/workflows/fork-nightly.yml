@@ -159,13 +159,15 @@ jobs:
       - uses: cachix/install-nix-action@v31
         if: steps.merge.outputs.skip != 'true'
 
+      # Login and substituter only: its automatic push would upload every new
+      # store path, the pnpm dependencies and sources included.
       - uses: ryanccn/attic-action@v0
         if: steps.merge.outputs.skip != 'true'
         with:
           endpoint: https://cache.nix.devminer.xyz
           cache: ypanagidis-t3code
           token: ${{ secrets.ATTIC_TOKEN }}
-          push-args: --jobs 4
+          skip-push: true
 
       - name: Build Nix package and move the nightly branch
         id: nix
@@ -187,7 +189,8 @@ jobs:
             echo "$got" > nix/pnpm-deps.hash
             git add nix/pnpm-deps.hash
           fi
-          nix build .#default -L
+          out="$(nix build .#default -L --print-out-paths)"
+          echo "out=$out" >> "$GITHUB_OUTPUT"
           # One snapshot commit without .github/: GITHUB_TOKEN may not push the
           # upstream workflow changes the merged history carries, and Nix
           # never reads them.
@@ -196,6 +199,12 @@ jobs:
             -m "nightly ${{ steps.merge.outputs.version }}" \
             -m "Source of the ${{ steps.merge.outputs.version }} release: $(git rev-parse HEAD)")"
           git push --force origin "$snapshot:refs/heads/nightly"
+
+      # The package's runtime closure only; attic skips what cache.nixos.org has.
+      - name: Push the Nix package to attic
+        if: steps.merge.outputs.skip != 'true' && steps.nix.outcome == 'success'
+        continue-on-error: true
+        run: attic push --jobs 2 ypanagidis-t3code "${{ steps.nix.outputs.out }}"
 
       - name: Prune old releases
         if: steps.merge.outputs.skip != 'true'
