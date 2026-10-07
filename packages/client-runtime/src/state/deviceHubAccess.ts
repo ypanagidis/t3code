@@ -26,6 +26,29 @@ export { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts
 
 const TICKET_TIMEOUT_MS = 8_000;
 
+/** Mints a WebSocket ticket for a bearer or DPoP connection. */
+export const mintEnvironmentWebSocketTicket = Effect.fn(
+  "clientRuntime.state.mintEnvironmentWebSocketTicket",
+)(function* (
+  prepared: PreparedConnection,
+): Effect.fn.Return<string, RemoteEnvironmentRequestError, HttpClient.HttpClient> {
+  const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+  const remoteAuthorization = yield* Effect.serviceOption(
+    RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+  );
+  const ticket = yield* executeAuthenticatedEnvironmentHttpRequest({
+    prepared,
+    signer,
+    remoteAuthorization,
+    group: "auth",
+    method: "POST",
+    url: (httpBaseUrl) => environmentEndpointUrl(httpBaseUrl, "/api/auth/websocket-ticket"),
+    timeoutMs: TICKET_TIMEOUT_MS,
+    request: ({ client, headers }) => client.webSocketTicket({ headers }),
+  });
+  return ticket.ticket;
+});
+
 export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDeviceHubAccess")(
   function* (input: {
     readonly prepared: PreparedConnection;
@@ -36,24 +59,11 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
     if (input.prepared.httpAuthorization === null) {
       return { httpBase, wsBase, query: {}, credentials: true };
     }
-    const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
-    const remoteAuthorization = yield* Effect.serviceOption(
-      RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
-    );
-    const ticket = yield* executeAuthenticatedEnvironmentHttpRequest({
-      prepared: input.prepared,
-      signer,
-      remoteAuthorization,
-      group: "auth",
-      method: "POST",
-      url: (httpBaseUrl) => environmentEndpointUrl(httpBaseUrl, "/api/auth/websocket-ticket"),
-      timeoutMs: TICKET_TIMEOUT_MS,
-      request: ({ client, headers }) => client.webSocketTicket({ headers }),
-    });
+    const wsTicket = yield* mintEnvironmentWebSocketTicket(input.prepared);
     return {
       httpBase,
       wsBase,
-      query: { wsTicket: ticket.ticket },
+      query: { wsTicket },
       credentials: false,
     };
   },

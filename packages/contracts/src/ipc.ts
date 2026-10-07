@@ -11,6 +11,11 @@ import type {
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import type {
+  DesktopPortForward,
+  DesktopPortForwardCredentialInput,
+  DesktopPortForwardStartInput,
+} from "./portForward.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 import type { PreviewForwardedShortcut } from "./keybindings.ts";
@@ -1180,6 +1185,18 @@ export interface DesktopBridge {
     bearerToken: string,
   ) => Promise<AuthWebSocketTicketResult>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
+  /**
+   * TCP port forwards hosted by desktop main on 127.0.0.1. Absent on desktop
+   * builds predating port forwarding. Forwards live until stopped or the app quits.
+   */
+  startPortForward?: (input: DesktopPortForwardStartInput) => Promise<DesktopPortForward>;
+  stopPortForward?: (forwardId: string) => Promise<void>;
+  listPortForwards?: () => Promise<readonly DesktopPortForward[]>;
+  /** Replace the WebSocket ticket new connections use for an environment's forwards. */
+  updatePortForwardCredential?: (input: DesktopPortForwardCredentialInput) => Promise<void>;
+  onPortForwardsChanged?: (
+    listener: (forwards: readonly DesktopPortForward[]) => void,
+  ) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;

@@ -80,11 +80,13 @@ import {
   installCliCommand,
   uninstallCliCommand,
 } from "./methods/cliCommand.ts";
+import * as PortForwardIpc from "./methods/portForward.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* installNotificationBadge();
   yield* PreviewIpc.installPreviewEventForwarding();
+  yield* PortForwardIpc.installPortForwardEventForwarding();
 
   yield* ipc.handle(AppActivationIpc.setReady);
   yield* ipc.handle(AppActivationIpc.complete);
@@ -131,6 +133,11 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setServerExposureMode);
   yield* ipc.handle(setTailscaleServeEnabled);
   yield* ipc.handle(getAdvertisedEndpoints);
+
+  yield* ipc.handle(PortForwardIpc.startPortForward);
+  yield* ipc.handle(PortForwardIpc.stopPortForward);
+  yield* ipc.handle(PortForwardIpc.listPortForwards);
+  yield* ipc.handle(PortForwardIpc.updatePortForwardCredential);
 
   yield* ipc.handle(getWslState);
   yield* ipc.handle(setWslBackendEnabled);

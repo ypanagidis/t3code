@@ -5,6 +5,7 @@ import {
   ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
   PlusIcon,
+  PlugIcon,
   QrCodeIcon,
   RouteIcon,
   TerminalIcon,
@@ -83,6 +84,8 @@ import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
+import { EnvironmentPortForwards } from "./EnvironmentPortForwards";
+import { useCanForwardPorts, usePortForwards } from "~/state/portForwards";
 import { usePreparedConnection } from "~/state/session";
 import {
   EnvironmentRow,
@@ -1495,7 +1498,15 @@ function SavedBackendListRow({
 }: SavedBackendListRowProps) {
   const [routesOpen, setRoutesOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [portForwardsOpen, setPortForwardsOpen] = useState(false);
   const environmentId = environment.environmentId;
+  const canForwardPorts = useCanForwardPorts(environmentId);
+  const allPortForwards = usePortForwards();
+  const portForwards = useMemo(
+    () => allPortForwards.filter((forward) => forward.environmentId === environmentId),
+    [allPortForwards, environmentId],
+  );
+  const showPortForwards = portForwards.length > 0 || (canForwardPorts && portForwardsOpen);
   const unsupported = environment.connection.phase === "unsupported";
   const enabled = environment.entry.enabled && !unsupported;
   const isConnected = environment.connection.phase === "connected";
@@ -1698,6 +1709,13 @@ function SavedBackendListRow({
               onAddRoute={() => onAddRoute(environment)}
             />
           )}
+          {showPortForwards && (
+            <EnvironmentPortForwards
+              environment={environment}
+              forwards={portForwards}
+              canAdd={canForwardPorts}
+            />
+          )}
           {permissionsOpen && (
             <div
               id={`remote-permissions-${environmentId}`}
@@ -1776,6 +1794,13 @@ function SavedBackendListRow({
             <RouteIcon />
             {routesOpen ? "Hide routes" : "Routes"}
           </MenuItem>
+          {/* With forwards running the list, and its form, is already shown. */}
+          {canForwardPorts && portForwards.length === 0 ? (
+            <MenuItem onClick={() => setPortForwardsOpen((open) => !open)}>
+              <PlugIcon />
+              {portForwardsOpen ? "Hide forwarded ports" : "Forward a port…"}
+            </MenuItem>
+          ) : null}
           {mcpUrl ? (
             <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>Copy MCP URL</MenuItem>
           ) : null}

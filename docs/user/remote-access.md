@@ -179,6 +179,26 @@ running is left alone.
 For Antigravity's Google callback on a remote host, see
 [remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
 
+## Forward a port
+
+The desktop app can make a TCP port on a remote environment reachable on your
+own computer, for example a dev server on `5173` or a database on `5432`. In
+**Settings → Connections**, open the environment's **⋯** menu, choose
+**Forward a port**, and enter the remote port. A **Forward to this computer**
+button also appears next to servers listed in the Browser panel.
+
+The forward listens on `127.0.0.1` on your computer, using the same port number
+when it is free and another free port otherwise; enter a local port to choose
+one. Connections reach `localhost` on the remote machine. Forwards last until
+you stop them, remove the environment, or quit the app. On macOS, if you close
+every T3 Code window, new connections to a forward fail after a few minutes
+until you open a window again.
+
+Port forwarding works only over SSH environments and direct LAN or Tailscale
+connections, not through T3 Connect. It carries TCP only, needs the desktop
+app, and needs a session with the `terminal:operate` permission, because a
+forwarded port can reach anything listening on the remote machine.
+
 ## Browser on a remote environment
 
 Browser tabs belong to the environment, so you and your agents see the same

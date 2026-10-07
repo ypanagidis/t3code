@@ -212,6 +212,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       "server"`) and streams them over `/api/preview-stream`. Clients
       without a local browser runtime open server tabs here. */
   serverBrowser: Schema.optionalKey(Schema.Boolean),
+  /** Server accepts TCP port forwards on `TCP_PORT_FORWARD_ROUTE`. Absent on
+      older servers, where clients must not offer port forwarding. */
+  tcpPortForwarding: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
