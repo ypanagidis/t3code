@@ -188,6 +188,8 @@ describe("DesktopPortForwards", () => {
         assert.strictEqual(yield* readExactly(first, 5), "hello");
         const [listed] = yield* forwards.list;
         assert.strictEqual(listed?.activeConnections, 1);
+        assert.strictEqual(listed?.bytesSent, 5);
+        assert.strictEqual(listed?.bytesReceived, 5);
 
         yield* forwards.updateCredential({
           environmentId,

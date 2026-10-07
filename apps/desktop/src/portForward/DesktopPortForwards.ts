@@ -1,4 +1,4 @@
-// @effect-diagnostics globalTimers:off -- Change coalescing runs at node:net socket callback boundaries outside Effect fibers.
+// @effect-diagnostics globalTimers:off -- Change coalescing and throughput sampling run at node:net socket callback boundaries outside Effect fibers.
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import {
   TCP_PORT_FORWARD_ROUTE,
@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as NodeNet from "node:net";
+import * as NodePerfHooks from "node:perf_hooks";
 
 const NodeWS = NodeSocket.NodeWS;
 /** A zero-length binary frame tells the environment the local client half-closed. */
@@ -23,6 +24,8 @@ const HALF_CLOSE_FRAME = new Uint8Array(0);
 const WEBSOCKET_HIGH_WATER_MARK = 1024 * 1024;
 /** Coalesces change events so a burst of connections sends one update. */
 const CHANGE_EMIT_DELAY_MS = 100;
+/** Throughput sampling period. The sampler only runs while some forward carries traffic. */
+const THROUGHPUT_SAMPLE_MS = 1000;
 
 export class DesktopPortForwardBindError extends Schema.TaggedError<DesktopPortForwardBindError>()(
   "DesktopPortForwardBindError",
@@ -72,6 +75,19 @@ interface ForwardEntry {
   readonly server: NodeNet.Server;
   readonly sockets: Set<NodeNet.Socket>;
   lastError: string | undefined;
+  bytesReceived: number;
+  bytesSent: number;
+  /** Totals at the previous throughput sample. */
+  sampledReceived: number;
+  sampledSent: number;
+  receiveBytesPerSecond: number;
+  sendBytesPerSecond: number;
+}
+
+/** Byte counters a piped connection reports into. */
+interface TrafficCounter {
+  readonly received: (bytes: number) => void;
+  readonly sent: (bytes: number) => void;
 }
 
 const toForward = (entry: ForwardEntry): DesktopPortForward => ({
@@ -81,6 +97,10 @@ const toForward = (entry: ForwardEntry): DesktopPortForward => ({
   remotePort: entry.remotePort,
   localPort: entry.localPort,
   activeConnections: entry.sockets.size,
+  bytesReceived: entry.bytesReceived,
+  bytesSent: entry.bytesSent,
+  receiveBytesPerSecond: entry.receiveBytesPerSecond,
+  sendBytesPerSecond: entry.sendBytesPerSecond,
   ...(entry.lastError === undefined ? {} : { lastError: entry.lastError }),
 });
 
@@ -137,6 +157,7 @@ const toBuffer = (data: NodeSocket.NodeWS.RawData): Buffer =>
 const pipeSocket = (
   socket: NodeNet.Socket,
   url: string,
+  traffic: TrafficCounter,
   onFailure: (message: string) => void,
   onSuccess: () => void,
 ) => {
@@ -162,7 +183,9 @@ const pipeSocket = (
     socket.resume();
   });
   ws.on("message", (data) => {
-    if (!socket.write(toBuffer(data))) ws.pause();
+    const bytes = toBuffer(data);
+    traffic.received(bytes.length);
+    if (!socket.write(bytes)) ws.pause();
   });
   socket.on("drain", () => ws.resume());
   ws.on("close", (code, reason) => {
@@ -184,6 +207,7 @@ const pipeSocket = (
   });
 
   socket.on("data", (chunk: Buffer) => {
+    traffic.sent(chunk.length);
     unflushed += chunk.length;
     ws.send(chunk, () => {
       unflushed -= chunk.length;
@@ -215,6 +239,8 @@ export const make = Effect.gen(function* () {
   const listeners = new Set<DesktopPortForwardsListener>();
   let nextId = 1;
   let emitTimer: ReturnType<typeof setTimeout> | undefined;
+  let sampleTimer: ReturnType<typeof setInterval> | undefined;
+  let sampledAt = 0;
 
   const snapshot = (): readonly DesktopPortForward[] => Array.from(forwards.values(), toForward);
 
@@ -229,6 +255,40 @@ export const make = Effect.gen(function* () {
     }, CHANGE_EMIT_DELAY_MS);
   };
 
+  // Recomputes per-forward throughput once a second and publishes it through
+  // the coalesced change event. Stops itself once every forward is idle and
+  // its rates have been reported as zero, so idle forwards cost nothing.
+  const sampleThroughput = () => {
+    const now = NodePerfHooks.performance.now();
+    const seconds = Math.max((now - sampledAt) / 1000, 0.001);
+    sampledAt = now;
+    let changed = false;
+    let busy = false;
+    for (const entry of forwards.values()) {
+      const receiveRate = Math.round((entry.bytesReceived - entry.sampledReceived) / seconds);
+      const sendRate = Math.round((entry.bytesSent - entry.sampledSent) / seconds);
+      entry.sampledReceived = entry.bytesReceived;
+      entry.sampledSent = entry.bytesSent;
+      if (receiveRate !== entry.receiveBytesPerSecond || sendRate !== entry.sendBytesPerSecond) {
+        entry.receiveBytesPerSecond = receiveRate;
+        entry.sendBytesPerSecond = sendRate;
+        changed = true;
+      }
+      if (entry.sockets.size > 0 || receiveRate > 0 || sendRate > 0) busy = true;
+    }
+    if (changed) emitChanged();
+    if (!busy && sampleTimer !== undefined) {
+      clearInterval(sampleTimer);
+      sampleTimer = undefined;
+    }
+  };
+
+  const ensureSampling = () => {
+    if (sampleTimer !== undefined) return;
+    sampledAt = NodePerfHooks.performance.now();
+    sampleTimer = setInterval(sampleThroughput, THROUGHPUT_SAMPLE_MS);
+  };
+
   const acceptConnection = (entry: ForwardEntry, socket: NodeNet.Socket) => {
     const credential = credentials.get(entry.environmentId);
     if (credential === undefined) {
@@ -236,6 +296,7 @@ export const make = Effect.gen(function* () {
       return;
     }
     entry.sockets.add(socket);
+    ensureSampling();
     socket.once("close", () => {
       entry.sockets.delete(socket);
       emitChanged();
@@ -243,6 +304,14 @@ export const make = Effect.gen(function* () {
     pipeSocket(
       socket,
       makePortForwardUrl(credential, entry.remotePort),
+      {
+        received: (bytes) => {
+          entry.bytesReceived += bytes;
+        },
+        sent: (bytes) => {
+          entry.bytesSent += bytes;
+        },
+      },
       (message) => {
         entry.lastError = message;
       },
@@ -298,6 +367,12 @@ export const make = Effect.gen(function* () {
         server,
         sockets: new Set(),
         lastError: undefined,
+        bytesReceived: 0,
+        bytesSent: 0,
+        sampledReceived: 0,
+        sampledSent: 0,
+        receiveBytesPerSecond: 0,
+        sendBytesPerSecond: 0,
       };
       server.on("connection", (socket) => acceptConnection(entry, socket));
       server.on("error", (error) => {
@@ -335,6 +410,7 @@ export const make = Effect.gen(function* () {
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       if (emitTimer !== undefined) clearTimeout(emitTimer);
+      if (sampleTimer !== undefined) clearInterval(sampleTimer);
       for (const entry of forwards.values()) {
         closeEntry(entry);
       }

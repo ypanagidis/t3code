@@ -4,7 +4,12 @@ import { type FormEvent, useState } from "react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { EnvironmentPresentation } from "~/state/environments";
-import { parsePortInput, startPortForward, stopPortForward } from "~/state/portForwards";
+import {
+  formatByteCount,
+  parsePortInput,
+  startPortForward,
+  stopPortForward,
+} from "~/state/portForwards";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -77,6 +82,9 @@ function PortForwardRow({ forward }: { readonly forward: DesktopPortForward }) {
   };
   const connections =
     forward.activeConnections === 1 ? "1 connection" : `${forward.activeConnections} connections`;
+  const traffic =
+    `RX ${formatByteCount(forward.receiveBytesPerSecond)}/s (${formatByteCount(forward.bytesReceived)})` +
+    ` · TX ${formatByteCount(forward.sendBytesPerSecond)}/s (${formatByteCount(forward.bytesSent)})`;
 
   return (
     <li className="flex items-center gap-2 border-b border-border/70 px-2 py-1.5">
@@ -92,6 +100,7 @@ function PortForwardRow({ forward }: { readonly forward: DesktopPortForward }) {
             <span className="text-destructive"> · {forward.lastError}</span>
           ) : null}
         </p>
+        <p className="truncate font-mono text-2xs text-muted-foreground tabular-nums">{traffic}</p>
       </div>
       <Tooltip>
         <TooltipTrigger

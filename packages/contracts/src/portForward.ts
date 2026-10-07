@@ -45,6 +45,13 @@ export const DesktopPortForward = Schema.Struct({
   remotePort: PortSchema,
   localPort: PortSchema,
   activeConnections: NonNegativeInt,
+  /** Bytes the environment sent to local clients since the forward started. */
+  bytesReceived: NonNegativeInt,
+  /** Bytes local clients sent to the environment since the forward started. */
+  bytesSent: NonNegativeInt,
+  /** Receive and send throughput over the most recent sampling second. Zero when idle. */
+  receiveBytesPerSecond: NonNegativeInt,
+  sendBytesPerSecond: NonNegativeInt,
   /** Message from the most recent connection that failed to reach the remote port. */
   lastError: Schema.optionalKey(Schema.String),
 });

@@ -7,7 +7,7 @@ import {
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { canForwardPorts, parsePortInput } from "./portForwards";
+import { canForwardPorts, formatByteCount, parsePortInput } from "./portForwards";
 
 const environmentId = EnvironmentId.make("env-remote");
 const ssh = new SshConnectionTarget({ environmentId, label: "box", connectionId: "ssh-1" });
@@ -57,5 +57,15 @@ describe("parsePortInput", () => {
     expect(parsePortInput("65536")).toBeNull();
     expect(parsePortInput("80.5")).toBeNull();
     expect(parsePortInput("")).toBeNull();
+  });
+});
+
+describe("formatByteCount", () => {
+  it("scales to the largest whole unit and keeps one decimal below 10", () => {
+    expect(formatByteCount(0)).toBe("0 B");
+    expect(formatByteCount(1023)).toBe("1023 B");
+    expect(formatByteCount(1536)).toBe("1.5 KB");
+    expect(formatByteCount(12 * 1024 * 1024)).toBe("12 MB");
+    expect(formatByteCount(3 * 1024 ** 5)).toBe("3072 TB");
   });
 });
