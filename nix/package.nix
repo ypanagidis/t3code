@@ -34,7 +34,7 @@
   clerkCliOAuthClientId ? null,
   relayUrl ? null,
 
-  # Kept in its own file so the nightly workflow can refresh it after a rebase.
+  # Kept in its own file so the nightly workflow can refresh it after a merge.
   pnpmDepsHash ? lib.fileContents ./pnpm-deps.hash,
 }:
 
