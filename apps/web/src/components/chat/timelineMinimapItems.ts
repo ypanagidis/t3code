@@ -1,3 +1,4 @@
+import { stripPotetoModePrefix } from "@t3tools/client-runtime/user-message";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
 export interface TimelineMinimapItem {
@@ -60,7 +61,7 @@ export function resolveTimelineMinimapPreview(
     ? null
     : {
         ...item,
-        userText: compactMinimapPreview(item.userText),
+        userText: compactMinimapPreview(item.userText && stripPotetoModePrefix(item.userText)),
         assistantText: compactMinimapPreview(item.assistantText),
       };
 }

@@ -259,6 +259,7 @@ import {
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useDebouncedValue } from "~/state/queries";
+import { PotatoIcon } from "../Icons";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import {
@@ -1129,6 +1130,7 @@ import {
   getProviderSkillsForSlashMenu,
   hasCompleteProviderWorkspaceSnapshot,
   hasCurrentProviderWorkspaceSnapshot,
+  resolvePotetoModeInvocation,
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
 } from "@t3tools/client-runtime/providerSkills";
@@ -1502,6 +1504,8 @@ export interface ChatComposerHandle {
     selectedProviderModels: ReadonlyArray<ServerProvider["models"][number]>;
     interactionMode: ProviderInteractionMode;
     interactionModeEnabled: boolean;
+    /** The skill token to lead each prompt with, when poteto mode is on and resolvable. */
+    potetoModeInvocation: string | null;
   };
   /** Validate the fully composed text immediately before a provider turn starts. */
   validateProviderInput: (providerInput: string) => boolean;
@@ -1598,6 +1602,7 @@ export interface ChatComposerProps {
   // Mode
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
+  potetoMode: boolean;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -1693,6 +1698,7 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  onPotetoModeChange: (enabled: boolean) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -1750,6 +1756,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     runtimeMode,
     interactionMode: requestedInteractionMode,
+    potetoMode,
     lockedProvider,
     providerStatuses,
     providerCatalogKnown,
@@ -1800,6 +1807,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    onPotetoModeChange,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -2210,6 +2218,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
         : [],
     [gitCwd, selectedProviderStatus],
+  );
+  const potetoModeInvocation = useMemo(
+    () => resolvePotetoModeInvocation(selectedProviderSkills, selectedProviderSlashCommands),
+    [selectedProviderSkills, selectedProviderSlashCommands],
   );
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
@@ -5496,6 +5508,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           data-resting-controls-separator="true"
         />
       ) : null}
+      {potetoModeInvocation !== null ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ComposerControl
+                size={composerControlsCollapsed ? "xs" : "sm"}
+                className={cn(
+                  "aspect-square px-0 aria-pressed:bg-transparent aria-pressed:hover:bg-accent",
+                  !composerControlsCollapsed && "-ms-1.5",
+                )}
+                aria-pressed={potetoMode}
+                aria-label="Poteto mode"
+                onClick={() => onPotetoModeChange(!potetoMode)}
+              />
+            }
+          >
+            <ComposerControlIcon
+              icon={PotatoIcon}
+              size={composerControlsCollapsed ? "xs" : "sm"}
+              className={potetoMode ? "text-primary" : undefined}
+            />
+          </TooltipTrigger>
+          <TooltipPopup side="top">
+            Poteto mode: runs {potetoModeInvocation} on every prompt in this thread. Best for
+            non-trivial work like features, bug fixes, and refactors. Skip it for quick questions.
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
       <ProviderModelPicker
         compact={false}
         isComposerOwned
@@ -5558,7 +5598,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 !showInlineRestingControls &&
                   "@max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none",
               )
-            : "-ms-2.5 min-w-13"
+            : cn("min-w-13", potetoModeInvocation === null && "-ms-2.5")
         }
         terminalOpen={terminalOpen}
         open={isComposerModelPickerOpen}
@@ -6559,6 +6599,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedProviderModels,
         interactionMode,
         interactionModeEnabled: planModeUiEnabled,
+        potetoModeInvocation: potetoMode ? potetoModeInvocation : null,
       }),
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
@@ -6616,6 +6657,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedProviderModels,
       interactionMode,
       planModeUiEnabled,
+      potetoMode,
+      potetoModeInvocation,
       compactThreadContext,
       restoreAfterTimelineReachedEnd,
       getTimelineScrollableNode,

@@ -413,7 +413,16 @@ import {
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { workspacePreparationRetryRunIds } from "@t3tools/client-runtime/state/turn-item-presentation";
-import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
+import {
+  resolvePotetoModeInvocation,
+  resolveProviderSkillsForCwd,
+  resolveProviderSlashCommandsForCwd,
+} from "@t3tools/client-runtime/providerSkills";
+import {
+  applyPotetoModePrefix,
+  readPotetoModeInvocation,
+  stripPotetoModePrefix,
+} from "@t3tools/client-runtime/user-message";
 import { vcsEnvironment } from "../state/vcs";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useProjectClone } from "../state/projectClones";
@@ -1680,6 +1689,8 @@ export default function ChatView(props: ChatViewProps) {
     readonly runId: RunId;
     readonly messageId: MessageId;
     readonly originalText: string;
+    /** The hidden poteto mode prefix, put back on save. */
+    readonly potetoModeInvocation: string | null;
     readonly existingAttachments: ReadonlyArray<ContractChatAttachment>;
     readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
   } | null>(null);
@@ -1799,6 +1810,10 @@ export default function ChatView(props: ChatViewProps) {
   const composerInteractionMode = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.interactionMode ?? null,
   );
+  // Keyed to the thread, not a queued-message edit, so the mode holds while editing.
+  const composerPotetoMode = useComposerDraftStore(
+    (store) => store.getComposerDraft(baseComposerDraftTarget)?.potetoMode ?? false,
+  );
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
@@ -1826,6 +1841,11 @@ export default function ChatView(props: ChatViewProps) {
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
+  );
+  const setComposerDraftPotetoMode = useComposerDraftStore((store) => store.setPotetoMode);
+  const handlePotetoModeChange = useCallback(
+    (enabled: boolean) => setComposerDraftPotetoMode(baseComposerDraftTarget, enabled),
+    [baseComposerDraftTarget, setComposerDraftPotetoMode],
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
@@ -4678,13 +4698,15 @@ export default function ChatView(props: ChatViewProps) {
         clearComposerDraftContent(queuedEditDraftTargetFor(editingQueuedRun.runId));
       }
       const target = queuedEditDraftTargetFor(request.runId);
+      const editableText = stripPotetoModePrefix(request.text);
       clearComposerDraftContent(target);
-      setComposerDraftPrompt(target, request.text);
+      setComposerDraftPrompt(target, editableText);
       setEditingQueuedRun({
         threadId: activeThread.id,
         runId: request.runId,
         messageId: request.messageId,
-        originalText: request.text,
+        originalText: editableText,
+        potetoModeInvocation: readPotetoModeInvocation(request.text),
         existingAttachments: request.attachments,
         context: serverProjection?.messages.find((message) => message.id === request.messageId)
           ?.context,
@@ -8870,6 +8892,7 @@ export default function ChatView(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
+      potetoModeInvocation: ctxPotetoModeInvocation,
     } = sendCtx;
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
@@ -8977,7 +9000,10 @@ export default function ChatView(props: ChatViewProps) {
           input: {
             threadId: editingQueuedRun.threadId,
             runId: editingQueuedRun.runId,
-            text: editText.length === 0 ? ATTACHMENT_ONLY_BOOTSTRAP_PROMPT : editText,
+            text: applyPotetoModePrefix(
+              editText.length === 0 ? ATTACHMENT_ONLY_BOOTSTRAP_PROMPT : editText,
+              editingQueuedRun.potetoModeInvocation,
+            ),
             edit: {
               messageId: editingQueuedRun.messageId,
               attachments: uploads,
@@ -9123,7 +9149,7 @@ export default function ChatView(props: ChatViewProps) {
         model: ctxSelectedModel,
         models: ctxSelectedProviderModels,
         effort: ctxSelectedPromptEffort,
-        text: followUp.text.trim(),
+        text: applyPotetoModePrefix(followUp.text.trim(), ctxPotetoModeInvocation),
       });
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
         return;
@@ -9289,7 +9315,10 @@ export default function ChatView(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      text: applyPotetoModePrefix(
+        messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+        ctxPotetoModeInvocation,
+      ),
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -9333,12 +9362,21 @@ export default function ChatView(props: ChatViewProps) {
         promptInjectionState: getComposerPromptInjectionState(messageTextForSend),
         planModeEnabled: settings.planModeEnabled,
       });
+      const potetoModeInvocation = composerPotetoMode
+        ? resolvePotetoModeInvocation(
+            resolveProviderSkillsForCwd(provider.snapshot, gitCwd),
+            resolveProviderSlashCommandsForCwd(provider.snapshot, gitCwd),
+          )
+        : null;
       const text = formatOutgoingPrompt({
         provider: provider.driverKind,
         model: selection.model,
         models: provider.models,
         effort: providerState.promptEffort,
-        text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+        text: applyPotetoModePrefix(
+          messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+          potetoModeInvocation,
+        ),
       });
       if (composerRef.current?.validateProviderInput(text) === false) return;
       multipleTargets.push({
@@ -10416,6 +10454,7 @@ export default function ChatView(props: ChatViewProps) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
+      potetoModeInvocation: ctxPotetoModeInvocation,
     } = sendCtx;
 
     const threadIdForSend = activeThread.id;
@@ -10426,7 +10465,7 @@ export default function ChatView(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: trimmed,
+      text: applyPotetoModePrefix(trimmed, ctxPotetoModeInvocation),
     });
 
     sendInFlightRef.current = true;
@@ -11694,6 +11733,7 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               runtimeMode={runtimeMode}
                               interactionMode={interactionMode}
+                              potetoMode={composerPotetoMode}
                               lockedProvider={modelPickerLockedProvider}
                               providerStatuses={providerStatuses as ServerProvider[]}
                               providerCatalogKnown={serverConfig !== null}
@@ -11759,6 +11799,7 @@ export default function ChatView(props: ChatViewProps) {
                               toggleInteractionMode={toggleInteractionMode}
                               handleRuntimeModeChange={handleRuntimeModeChange}
                               handleInteractionModeChange={handleInteractionModeChange}
+                              onPotetoModeChange={handlePotetoModeChange}
                               focusComposer={focusComposer}
                               scheduleComposerFocus={scheduleComposerFocus}
                               setThreadError={setThreadError}

@@ -16,6 +16,7 @@ import {
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
   resolveProviderSkillSourceKind,
+  resolvePotetoModeInvocation,
 } from "./providerSkills.ts";
 
 const provider = {
@@ -302,5 +303,45 @@ describe("workspace provider snapshots", () => {
     expect(hasCurrentProviderWorkspaceSnapshot(provider, "/workspace/project-b", scannedAt)).toBe(
       false,
     );
+  });
+});
+
+describe("resolvePotetoModeInvocation", () => {
+  const skill = (name: string, extra: { enabled?: boolean; userInvocable?: boolean } = {}) => ({
+    name,
+    path: `/skills/${name}/SKILL.md`,
+    enabled: extra.enabled ?? true,
+    ...(extra.userInvocable === undefined ? {} : { userInvocable: extra.userInvocable }),
+  });
+
+  it("invokes a plugin-namespaced skill with the composer's skill token", () => {
+    expect(
+      resolvePotetoModeInvocation(
+        [skill("review"), skill("pstack:poteto-mode")],
+        [{ name: "poteto-mode" }],
+      ),
+    ).toBe("$pstack:poteto-mode");
+    expect(resolvePotetoModeInvocation([skill("poteto-mode")], [])).toBe("$poteto-mode");
+  });
+
+  it("skips skills the user cannot start and falls back to a slash command", () => {
+    expect(
+      resolvePotetoModeInvocation(
+        [
+          skill("poteto-mode", { enabled: false }),
+          skill("pstack:poteto-mode", { userInvocable: false }),
+        ],
+        [{ name: "pstack:poteto-mode" }],
+      ),
+    ).toBe("/pstack:poteto-mode");
+  });
+
+  it("returns null without an exact poteto-mode name", () => {
+    expect(
+      resolvePotetoModeInvocation(
+        [skill("poteto-mode-extra"), skill("not-poteto-mode")],
+        [{ name: "poteto" }],
+      ),
+    ).toBeNull();
   });
 });

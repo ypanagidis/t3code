@@ -2230,7 +2230,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
-  const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
+  const resolvedContext = useMemo(
+    () =>
+      resolveUserMessageContext({
+        text: resolveUserMessagePresentation(row.message).text,
+        context: row.message.context,
+      }),
+    [row.message],
+  );
   const previewImages = useMemo(
     () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
     [userImages],
