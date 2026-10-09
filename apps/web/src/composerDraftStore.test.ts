@@ -1670,6 +1670,27 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("typed during setup");
   });
 
+  it("keeps poteto mode on through the first send and promotion until turned off", () => {
+    const store = useComposerDraftStore.getState();
+    const ref = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPotetoMode(draftId, true);
+    store.setPrompt(draftId, "first prompt");
+    markPromotedDraftThreadByRef(ref);
+    store.clearComposerContent(draftId);
+    finalizePromotedDraftThreadByRef(ref);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.potetoMode).toBe(true);
+    expect(
+      partializeComposerDraftStoreState(useComposerDraftStore.getState()).draftsByThreadKey[
+        threadKeyFor(threadId, TEST_ENVIRONMENT_ID)
+      ]?.potetoMode,
+    ).toBe(true);
+
+    store.setPotetoMode(ref, false);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
   it("finalizes a matching materialized draft even when promotion was not pre-marked", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });

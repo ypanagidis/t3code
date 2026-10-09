@@ -1,7 +1,11 @@
 import { ScheduledTaskId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveUserMessagePresentation } from "./userMessage.ts";
+import {
+  applyPotetoModePrefix,
+  readPotetoModeInvocation,
+  resolveUserMessagePresentation,
+} from "./userMessage.ts";
 
 describe("resolveUserMessagePresentation", () => {
   const legacyText = "[Triggered by schedule task: Daily audit]\n\nCheck for crashes.\n";
@@ -66,5 +70,43 @@ describe("resolveUserMessagePresentation", () => {
         scheduledTaskId: "task:daily-audit",
       });
     }
+  });
+});
+
+describe("poteto mode prefix", () => {
+  const invocation = "$pstack:poteto-mode";
+
+  it("hides the injected prefix from the user's message", () => {
+    const sent = applyPotetoModePrefix("Fix the flaky test", invocation);
+    expect(sent).toBe("$pstack:poteto-mode\n\nFix the flaky test");
+    expect(resolveUserMessagePresentation({ role: "user", text: sent }).text).toBe(
+      "Fix the flaky test",
+    );
+  });
+
+  it("keeps a skill the user typed inline", () => {
+    const text = "$pstack:poteto-mode do x";
+    expect(resolveUserMessagePresentation({ role: "user", text }).text).toBe(text);
+    expect(readPotetoModeInvocation(text)).toBeNull();
+  });
+
+  it("is idempotent so a resend does not stack prefixes", () => {
+    const sent = applyPotetoModePrefix("Ship it", invocation);
+    expect(applyPotetoModePrefix(sent, invocation)).toBe(sent);
+    expect(applyPotetoModePrefix(sent, "/poteto-mode")).toBe(sent);
+  });
+
+  it("leaves a leading slash command first", () => {
+    expect(applyPotetoModePrefix("/compact", invocation)).toBe("/compact");
+    expect(applyPotetoModePrefix("/review the diff", invocation)).toBe("/review the diff");
+  });
+
+  it("keeps Claude's ultrathink line on top and visible", () => {
+    const sent = applyPotetoModePrefix("Ultrathink:\nRedesign the cache", invocation);
+    expect(sent).toBe("Ultrathink:\n$pstack:poteto-mode\n\nRedesign the cache");
+    expect(resolveUserMessagePresentation({ role: "user", text: sent }).text).toBe(
+      "Ultrathink:\nRedesign the cache",
+    );
+    expect(readPotetoModeInvocation(sent)).toBe(invocation);
   });
 });

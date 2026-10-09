@@ -38,6 +38,26 @@ export function isProviderSkillUserInvocable(
   return skill.enabled && skill.userInvocable !== false;
 }
 
+// Matches the token shape `applyPotetoModePrefix` writes and the timeline strips.
+const POTETO_MODE_NAME = /^(?:[\w:-]*:)?poteto-mode$/;
+
+/**
+ * The token that starts the poteto-mode skill on this provider: `$name` for a
+ * discovered skill (the composer's cross-provider form), else `/name` for a
+ * native slash command. `null` when the provider has neither.
+ */
+export function resolvePotetoModeInvocation(
+  skills: ReadonlyArray<ServerProviderSkill>,
+  slashCommands: ReadonlyArray<ServerProviderSlashCommand>,
+): string | null {
+  const skill = skills.find(
+    (candidate) => isProviderSkillUserInvocable(candidate) && POTETO_MODE_NAME.test(candidate.name),
+  );
+  if (skill) return `$${skill.name}`;
+  const command = slashCommands.find((candidate) => POTETO_MODE_NAME.test(candidate.name));
+  return command ? `/${command.name}` : null;
+}
+
 export function getProviderSkillsForSlashMenu(
   skills: ReadonlyArray<ServerProviderSkill>,
   showSkillsInSlashMenu: boolean,

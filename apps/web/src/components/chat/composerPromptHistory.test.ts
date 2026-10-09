@@ -54,6 +54,11 @@ describe("recallableComposerPrompt", () => {
       "Ultrathink:\nInvestigate this\n\n<terminal_context>\n- Terminal 1 lines 12-13:\n  12 | git status\n  13 | On branch main\n</terminal_context>\n\n<element_context>\n- <button>:\n  url: https://example.com\n</element_context>";
     expect(recallableComposerPrompt(sent)).toBe("Investigate this");
   });
+  it("recalls a poteto mode prompt without its injected invocation", () => {
+    expect(recallableComposerPrompt("Ultrathink:\n$pstack:poteto-mode\n\nInvestigate this")).toBe(
+      "Investigate this",
+    );
+  });
 
   it.each([
     ["Look at @terminal-1:4 please", "Look at please"],
