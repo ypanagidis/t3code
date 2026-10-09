@@ -3,9 +3,11 @@ import { type OrchestrationV2Actor, ScheduledTaskId } from "@t3tools/contracts";
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
 const CLAUDE_ULTRATHINK_LINE = /^Ultrathink:\r?\n/;
-// The blank line after the token is what marks it as injected: a user who types
-// the skill themselves writes their request on the same line.
-const POTETO_MODE_PREFIX = /^(Ultrathink:\r?\n)?[$/](?:[\w:-]*:)?poteto-mode\r?\n\r?\n/;
+// An invisible separator after the blank line marks the prefix as injected, so the
+// same token typed by the user stays visible. It trails the token because both
+// providers only recognise the invocation when it is the first text.
+const POTETO_MODE_MARKER = "\u2063";
+const POTETO_MODE_PREFIX = /^(Ultrathink:\r?\n)?([$/](?:[\w:-]*:)?poteto-mode)\r?\n\r?\n\u2063/;
 const LEADING_SLASH_COMMAND = /^\/[^\s/]+(?:\s|$)/u;
 
 /**
@@ -23,13 +25,13 @@ export function applyPotetoModePrefix(text: string, invocation: string | null): 
     return text;
   }
   const ultrathink = CLAUDE_ULTRATHINK_LINE.exec(text)?.[0] ?? "";
-  return `${ultrathink}${invocation}\n\n${text.slice(ultrathink.length)}`;
+  return `${ultrathink}${invocation}\n\n${POTETO_MODE_MARKER}${text.slice(ultrathink.length)}`;
 }
 
 /** The poteto-mode invocation a sent prompt was prefixed with, if any. */
 export function readPotetoModeInvocation(text: string): string | null {
   const match = POTETO_MODE_PREFIX.exec(text);
-  return match ? match[0].slice(match[1]?.length ?? 0).trimEnd() : null;
+  return match?.[2] ?? null;
 }
 
 export function stripPotetoModePrefix(text: string): string {

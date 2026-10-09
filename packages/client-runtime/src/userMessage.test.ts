@@ -78,7 +78,7 @@ describe("poteto mode prefix", () => {
 
   it("hides the injected prefix from the user's message", () => {
     const sent = applyPotetoModePrefix("Fix the flaky test", invocation);
-    expect(sent).toBe("$pstack:poteto-mode\n\nFix the flaky test");
+    expect(sent).toBe("$pstack:poteto-mode\n\n\u2063Fix the flaky test");
     expect(resolveUserMessagePresentation({ role: "user", text: sent }).text).toBe(
       "Fix the flaky test",
     );
@@ -86,6 +86,12 @@ describe("poteto mode prefix", () => {
 
   it("keeps a skill the user typed inline", () => {
     const text = "$pstack:poteto-mode do x";
+    expect(resolveUserMessagePresentation({ role: "user", text }).text).toBe(text);
+    expect(readPotetoModeInvocation(text)).toBeNull();
+  });
+
+  it("keeps a skill the user typed on its own line", () => {
+    const text = "$pstack:poteto-mode\n\nFix the flaky test";
     expect(resolveUserMessagePresentation({ role: "user", text }).text).toBe(text);
     expect(readPotetoModeInvocation(text)).toBeNull();
   });
@@ -103,7 +109,7 @@ describe("poteto mode prefix", () => {
 
   it("keeps Claude's ultrathink line on top and visible", () => {
     const sent = applyPotetoModePrefix("Ultrathink:\nRedesign the cache", invocation);
-    expect(sent).toBe("Ultrathink:\n$pstack:poteto-mode\n\nRedesign the cache");
+    expect(sent).toBe("Ultrathink:\n$pstack:poteto-mode\n\n\u2063Redesign the cache");
     expect(resolveUserMessagePresentation({ role: "user", text: sent }).text).toBe(
       "Ultrathink:\nRedesign the cache",
     );

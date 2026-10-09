@@ -55,9 +55,9 @@ describe("recallableComposerPrompt", () => {
     expect(recallableComposerPrompt(sent)).toBe("Investigate this");
   });
   it("recalls a poteto mode prompt without its injected invocation", () => {
-    expect(recallableComposerPrompt("Ultrathink:\n$pstack:poteto-mode\n\nInvestigate this")).toBe(
-      "Investigate this",
-    );
+    expect(
+      recallableComposerPrompt("Ultrathink:\n$pstack:poteto-mode\n\n\u2063Investigate this"),
+    ).toBe("Investigate this");
   });
 
   it.each([
