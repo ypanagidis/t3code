@@ -173,6 +173,22 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.SSH_PASSWORD_PROMPT_CHANNEL, wrappedListener);
     };
   },
+  startPortForward: (input) => ipcRenderer.invoke(IpcChannels.START_PORT_FORWARD_CHANNEL, input),
+  stopPortForward: (forwardId) =>
+    ipcRenderer.invoke(IpcChannels.STOP_PORT_FORWARD_CHANNEL, forwardId),
+  listPortForwards: () => ipcRenderer.invoke(IpcChannels.LIST_PORT_FORWARDS_CHANNEL),
+  updatePortForwardCredential: (input) =>
+    ipcRenderer.invoke(IpcChannels.UPDATE_PORT_FORWARD_CREDENTIAL_CHANNEL, input),
+  onPortForwardsChanged: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, forwards: unknown) => {
+      if (!Array.isArray(forwards)) return;
+      listener(forwards as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(IpcChannels.PORT_FORWARDS_CHANGED_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.PORT_FORWARDS_CHANGED_CHANNEL, wrappedListener);
+    };
+  },
   resolveSshPasswordPrompt: (requestId, password) =>
     ipcRenderer.invoke(IpcChannels.RESOLVE_SSH_PASSWORD_PROMPT_CHANNEL, { requestId, password }),
   getServerExposureState: () => ipcRenderer.invoke(IpcChannels.GET_SERVER_EXPOSURE_STATE_CHANNEL),
