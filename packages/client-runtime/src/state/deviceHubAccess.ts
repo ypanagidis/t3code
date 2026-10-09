@@ -42,7 +42,7 @@ export const mintEnvironmentWebSocketTicket = Effect.fn(
     remoteAuthorization,
     group: "auth",
     method: "POST",
-    url: (httpBaseUrl) => environmentEndpointUrl(httpBaseUrl, "/api/auth/websocket-ticket"),
+    url: (urls) => urls.webSocketTicket(),
     timeoutMs: TICKET_TIMEOUT_MS,
     request: ({ client, headers }) => client.webSocketTicket({ headers }),
   });
