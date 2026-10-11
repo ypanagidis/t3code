@@ -43,7 +43,6 @@ import { formatShortTimestamp } from "../../timestampFormat";
 import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { ProviderInstanceIcon, providerTextColor } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
-import { WorkflowProgress } from "./WorkflowProgress";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 import { Button, InlineButton } from "../ui/button";
 import { T3Wordmark } from "../T3Wordmark";
@@ -492,7 +491,7 @@ function SubagentTimelineLink(props: {
   );
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
-  const card = (
+  return (
     <Tooltip>
       <TooltipTrigger
         delay={200}
@@ -530,14 +529,6 @@ function SubagentTimelineLink(props: {
         />
       </ThreadHoverCardPopup>
     </Tooltip>
-  );
-  return agent?.workflow === undefined ? (
-    card
-  ) : (
-    <div>
-      {card}
-      <WorkflowProgress workflow={agent.workflow} />
-    </div>
   );
 }
 
@@ -605,7 +596,7 @@ function HandoffEndpoint(props: {
         render={
           <span
             tabIndex={0}
-            className="inline-flex min-w-0 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-w-0 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <ProviderInstanceIcon
               driverKind={entry?.driverKind ?? ProviderDriverKind.make(props.instanceId)}

@@ -1,5 +1,8 @@
 import { stripPotetoModePrefix } from "@t3tools/client-runtime/user-message";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+  collectComposerContextReferences,
+} from "@t3tools/shared/composerContextReferences";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
 /**
@@ -15,10 +18,6 @@ const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
 const TRAILING_LEGACY_CONTEXT =
   /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
-
-/** Text sent in place of an empty prompt when a message is attachments only. */
-export const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
-  "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
 
 export interface ComposerPromptHistoryMessage {
   readonly id: string;
