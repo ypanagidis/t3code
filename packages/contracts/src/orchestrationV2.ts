@@ -682,7 +682,7 @@ export type OrchestrationV2WorkflowPhase = typeof OrchestrationV2WorkflowPhase.T
  * the JSON wire shape (see `OrchestrationV2SubagentJson`), so a nested
  * `DateTimeUtc` would never be encoded.
  */
-export const OrchestrationV2WorkflowAgent = Schema.Struct({
+const CurrentWorkflowAgent = Schema.Struct({
   /** Spawn ordinal within the run. Stable identity: an agent keeps it across updates. */
   index: NonNegativeInt,
   label: TrimmedNonEmptyString,
@@ -713,7 +713,60 @@ export const OrchestrationV2WorkflowAgent = Schema.Struct({
   prompt: Schema.optional(Schema.NonEmptyString),
   result: Schema.optional(Schema.NonEmptyString),
 });
-export type OrchestrationV2WorkflowAgent = typeof OrchestrationV2WorkflowAgent.Type;
+
+/**
+ * A member as the fork's earlier Claude workflow rows stored it, before upstream's shape took the
+ * `workflow` key. Threads and events written then still hold it, and one unreadable row stops the
+ * server at startup.
+ */
+const LegacyWorkflowAgent = Schema.Struct({
+  index: NonNegativeInt,
+  label: Schema.optional(Schema.String),
+  phaseIndex: Schema.optional(NonNegativeInt),
+  status: Schema.Literals(["pending", "running", "completed", "failed"]),
+  model: Schema.optional(Schema.String),
+  lastToolName: Schema.optional(Schema.String),
+  toolCalls: Schema.optional(NonNegativeInt),
+  tokens: Schema.optional(NonNegativeInt),
+  error: Schema.optional(Schema.String),
+});
+type CurrentWorkflowAgent = typeof CurrentWorkflowAgent.Type;
+type LegacyWorkflowAgent = typeof LegacyWorkflowAgent.Type;
+
+const fromLegacyWorkflowAgent = (
+  agent: CurrentWorkflowAgent | LegacyWorkflowAgent,
+): CurrentWorkflowAgent => {
+  if (!("status" in agent)) return agent;
+  const label = agent.label?.trim();
+  const model = agent.model?.trim();
+  return {
+    index: agent.index,
+    label: label ? label : `Agent ${agent.index}`,
+    state: agent.status === "pending" ? "queued" : agent.status,
+    ...(agent.phaseIndex === undefined ? {} : { phaseIndex: agent.phaseIndex }),
+    ...(model ? { model } : {}),
+    ...(agent.toolCalls === undefined ? {} : { toolCalls: agent.toolCalls }),
+    ...(agent.tokens === undefined ? {} : { totalTokens: agent.tokens }),
+  };
+};
+
+/** Reads both shapes and always writes the current one. */
+export const OrchestrationV2WorkflowAgent = Schema.Union([
+  CurrentWorkflowAgent,
+  LegacyWorkflowAgent,
+]).pipe(
+  Schema.decodeTo(
+    Schema.toType(CurrentWorkflowAgent),
+    SchemaTransformation.transform<
+      CurrentWorkflowAgent,
+      CurrentWorkflowAgent | LegacyWorkflowAgent
+    >({
+      decode: fromLegacyWorkflowAgent,
+      encode: (agent) => agent,
+    }),
+  ),
+);
+export type OrchestrationV2WorkflowAgent = CurrentWorkflowAgent;
 
 /**
  * Filesystem handles the provider reports when a run launches. The transcript

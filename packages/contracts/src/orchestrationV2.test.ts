@@ -28,6 +28,7 @@ import {
   OrchestrationV2CheckpointScope,
   OrchestrationV2Command,
   OrchestrationV2LimitRecoveryUpdate,
+  OrchestrationV2SubagentWorkflow,
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
@@ -135,6 +136,9 @@ const decodeOrchestrationV2ProviderCapabilities = Schema.decodeUnknownSync(
 const decodeOrchestrationV2SubscribeThreadInput = Schema.decodeUnknownSync(
   OrchestrationV2SubscribeThreadInput,
 );
+
+const decodeSubagentWorkflow = Schema.decodeUnknownSync(OrchestrationV2SubagentWorkflow);
+const encodeSubagentWorkflow = Schema.encodeSync(OrchestrationV2SubagentWorkflow);
 
 describe("orchestration V2 contracts", () => {
   it("carries command failure metadata through runtime and JSON schemas without output text", () => {
@@ -409,6 +413,42 @@ describe("orchestration V2 contracts", () => {
         turnItemsOmitLocalVisible: false,
       }),
     ).toThrow();
+  });
+
+  it("reads workflow members stored in the fork's earlier shape and writes the current one", () => {
+    const workflow = decodeSubagentWorkflow({
+      name: "tcp-forward-understand-design",
+      phases: [{ index: 1, title: "Understand" }],
+      agents: [
+        {
+          index: 1,
+          label: "read:server",
+          phaseIndex: 1,
+          status: "completed",
+          model: "claude-opus-5-5[1m]",
+          lastToolName: "Bash",
+          toolCalls: 106,
+          tokens: 206761,
+        },
+        { index: 2, status: "pending" },
+        { index: 3, label: "build:web", state: "running", totalTokens: 12 },
+      ],
+    });
+
+    expect(workflow.agents).toEqual([
+      {
+        index: 1,
+        label: "read:server",
+        state: "completed",
+        phaseIndex: 1,
+        model: "claude-opus-5-5[1m]",
+        toolCalls: 106,
+        totalTokens: 206761,
+      },
+      { index: 2, label: "Agent 2", state: "queued" },
+      { index: 3, label: "build:web", state: "running", totalTokens: 12 },
+    ]);
+    expect(encodeSubagentWorkflow(workflow).agents[0]).not.toHaveProperty("status");
   });
 
   it("decodes persisted capability snapshots that predate runtimePolicy", () => {
