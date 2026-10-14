@@ -14,6 +14,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   Columns2Icon,
+  EyeOffIcon,
   FolderTreeIcon,
   InfoIcon,
   MessageSquareOffIcon,
@@ -116,6 +117,10 @@ type ReviewAnnotation = DiffLineAnnotation<ReviewAnnotationGroup>;
 const COMMIT_PAGE_SIZE = 10;
 
 const PULL_REQUEST_FILE_TREE_STORAGE_KEY = "t3code.pullRequestFileTreeOpen";
+const PULL_REQUEST_HIDE_VIEWED_STORAGE_KEY = "t3code.pullRequestHideViewedFiles";
+
+/** Unchanged lines revealed per press of a hunk separator's up or down arrow. */
+const HUNK_EXPANSION_LINE_COUNT = 5;
 
 /** One answer from the host: a whole number of files, and where the next one carries on. */
 interface DiffSlice {
@@ -228,6 +233,11 @@ function PullRequestCodeTab({
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
     PULL_REQUEST_FILE_TREE_STORAGE_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const [hideViewedFiles, setHideViewedFiles] = useLocalStorage(
+    PULL_REQUEST_HIDE_VIEWED_STORAGE_KEY,
     false,
     Schema.Boolean,
   );
@@ -552,9 +562,16 @@ function PullRequestCodeTab({
     [commit, detail.reviewThreads, draft, files, pendingComments, placedThreadIds],
   );
 
+  // Only where the host keeps ticks at all, so the toggle cannot hide files it has no way to show.
+  const hidingViewedFiles = hideViewedFiles && filesViewedEnabled;
+  const visibleFiles = useMemo(
+    () =>
+      hidingViewedFiles ? annotatedFiles.filter(({ path }) => !isFileViewed(path)) : annotatedFiles,
+    [annotatedFiles, hidingViewedFiles, isFileViewed],
+  );
   const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
     () =>
-      annotatedFiles.map(({ fileKey, path, fileDiff, annotations, annotationsVersion }) => {
+      visibleFiles.map(({ fileKey, path, fileDiff, annotations, annotationsVersion }) => {
         const collapsed = isFileDiffCollapsed(fileKey, effectiveFoldOverride, toggledFiles);
         // Ticking a file that is already folded changes no fold, so without this the box on
         // screen would keep saying the opposite of what the count says.
@@ -571,7 +588,7 @@ function PullRequestCodeTab({
         };
       }),
     [
-      annotatedFiles,
+      visibleFiles,
       filesViewedEnabled,
       effectiveFoldOverride,
       isFileViewed,
@@ -611,7 +628,10 @@ function PullRequestCodeTab({
     [items],
   );
   const allFilesCollapsed = areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys);
-  const fileTreeEntries = useMemo(() => diffFileTreeEntries(files), [files]);
+  const fileTreeEntries = useMemo(
+    () => diffFileTreeEntries(visibleFiles.map(({ fileDiff }) => fileDiff)),
+    [visibleFiles],
+  );
 
   // A failed slice must not be asked for again on its own. The files already loaded keep the
   // sentinel on screen, so re-arming it after a failure would request the same slice forever.
@@ -685,6 +705,16 @@ function PullRequestCodeTab({
   const answeredReveal = useRef<number | null>(null);
   useEffect(() => {
     if (revealRequest === null || answeredReveal.current === revealRequest.nonce) return;
+    // Asked for by name, so a hidden file is worth showing the viewed ones again for. The reveal
+    // runs once the file is back among the items.
+    if (
+      hidingViewedFiles &&
+      annotatedFiles.some(({ path }) => path === revealRequest.path) &&
+      !items.some((item) => resolveFileDiffPath(item.fileDiff) === revealRequest.path)
+    ) {
+      setHideViewedFiles(false);
+      return;
+    }
     if (!items.some((item) => resolveFileDiffPath(item.fileDiff) === revealRequest.path)) {
       // The reader is not scrolling toward it, so the sentinel would never ask for its slice.
       if (canLoadNextSlice) loadNextSlice();
@@ -692,7 +722,16 @@ function PullRequestCodeTab({
     }
     answeredReveal.current = revealRequest.nonce;
     revealFile(revealRequest.path);
-  }, [canLoadNextSlice, items, loadNextSlice, revealFile, revealRequest]);
+  }, [
+    annotatedFiles,
+    canLoadNextSlice,
+    hidingViewedFiles,
+    items,
+    loadNextSlice,
+    revealFile,
+    revealRequest,
+    setHideViewedFiles,
+  ]);
 
   const toggleAllFiles = () => {
     // Held as an override of the default rather than as the file keys on screen: a diff that is
@@ -895,6 +934,7 @@ function PullRequestCodeTab({
       themeType: resolvedTheme,
       stickyHeaders: true,
       loadDiffFiles,
+      expansionLineCount: HUNK_EXPANSION_LINE_COUNT,
       enableGutterUtility: canCommentOnLines && draft === null,
       enableLineSelection: canCommentOnLines && draft === null,
       // Two gestures reach the same place: dragging the line numbers selects a range, and the
@@ -1367,6 +1407,26 @@ function PullRequestCodeTab({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        {filesViewedEnabled && files.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  aria-label={hideViewedFiles ? "Show viewed files" : "Hide viewed files"}
+                  variant="ghost"
+                  size="sm"
+                  pressed={hideViewedFiles}
+                  onPressedChange={(pressed) => setHideViewedFiles(Boolean(pressed))}
+                />
+              }
+            >
+              <EyeOffIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {hideViewedFiles ? "Show viewed files" : "Hide viewed files"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         {fileKeys.length > 0 ? (
           <Tooltip>
             <TooltipTrigger
@@ -1432,6 +1492,17 @@ function PullRequestCodeTab({
             <pre className="whitespace-pre-wrap break-words font-mono text-xs">{slice.text}</pre>
           </div>
         ))}
+      </div>,
+    );
+  }
+
+  if (items.length === 0 && nextCursor === null && files.length > 0) {
+    return withToolbar(
+      <div className="flex items-center gap-2 px-4 py-5 text-sm text-muted-foreground">
+        <span>Every file has been viewed.</span>
+        <Button size="xs" variant="outline" onClick={() => setHideViewedFiles(false)}>
+          Show viewed files
+        </Button>
       </div>,
     );
   }
