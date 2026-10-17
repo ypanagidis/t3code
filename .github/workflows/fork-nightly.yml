@@ -66,9 +66,18 @@ jobs:
           git config user.email "fork-nightly@users.noreply.github.com"
           tag="$(git ls-remote --tags --refs "$UPSTREAM" 'v*-nightly.*' |
             sed -E 's#.*refs/tags/##' | sort -V | tail -1)"
-          git fetch --no-tags "$UPSTREAM" "refs/tags/${tag}:refs/upstream-nightly"
+          # The sparse checkout is a blob:none partial clone, so the merge fetches blobs lazily.
+          # Upstream-only blobs exist only upstream, so it has to be a promisor remote too.
+          git remote add upstream "$UPSTREAM"
+          git config remote.upstream.promisor true
+          git config remote.upstream.partialclonefilter blob:none
+          git fetch --no-tags upstream "refs/tags/${tag}:refs/upstream-nightly"
           upstream_sha="$(git rev-parse 'refs/upstream-nightly^{commit}')"
           if ! git merge --no-edit -m "Merge upstream ${tag}" refs/upstream-nightly; then
+            if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+              echo "::error::Merging upstream ${tag} failed before reaching any conflict; see the log above."
+              exit 1
+            fi
             git diff --name-only --diff-filter=U | sed 's/^/::error::Conflict: /'
             git merge --abort || true
             echo "::error::fork conflicts with upstream ${tag}. Locally: git fetch ${UPSTREAM} tag ${tag} && git checkout fork && git merge ${tag}, resolve, and push fork."
