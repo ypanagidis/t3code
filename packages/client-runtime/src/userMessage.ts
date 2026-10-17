@@ -42,11 +42,6 @@ export function stripPotetoModePrefix(text: string): string {
   return text.replace(POTETO_MODE_PREFIX, "$1");
 }
 
-/**
- * Text and sender label for a user-role message. Older scheduled messages
- * stored their attribution in the prompt itself, and poteto mode's injected
- * prefix is hidden.
- */
 export function resolveUserMessagePresentation(message: {
   readonly id?: string;
   readonly role: string;
@@ -56,7 +51,6 @@ export function resolveUserMessagePresentation(message: {
   readonly scheduledTaskId?: ScheduledTaskId;
 }): {
   readonly text: string;
-  /** Who sent a user-role message the user did not type. */
   readonly attribution: "automation" | "agent" | "t3code" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
 } {
@@ -84,7 +78,6 @@ export function resolveUserMessagePresentation(message: {
   }
   return {
     text,
-    // Restart continuations were sent as the agent before they became notices.
     attribution:
       message.createdBy !== "agent"
         ? null
