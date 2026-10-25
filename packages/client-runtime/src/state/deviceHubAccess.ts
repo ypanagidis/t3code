@@ -19,7 +19,7 @@ export { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts
 
 const TICKET_TIMEOUT_MS = 8_000;
 
-/** Mints a WebSocket ticket for a bearer or DPoP connection. */
+/** Mints a media-route WebSocket ticket (device hub, port forwarding) for a bearer or DPoP connection. */
 export const mintEnvironmentWebSocketTicket = Effect.fn(
   "clientRuntime.state.mintEnvironmentWebSocketTicket",
 )(function* (
@@ -35,9 +35,10 @@ export const mintEnvironmentWebSocketTicket = Effect.fn(
     remoteAuthorization,
     group: "auth",
     method: "POST",
-    url: (urls) => urls.webSocketTicket(),
+    url: (urls) => urls.webSocketTicketFor({ params: { use: "media" } }),
     timeoutMs: TICKET_TIMEOUT_MS,
-    request: ({ client, headers }) => client.webSocketTicket({ headers }),
+    request: ({ client, headers }) =>
+      client.webSocketTicketFor({ headers, params: { use: "media" } }),
   });
   return ticket.ticket;
 });
