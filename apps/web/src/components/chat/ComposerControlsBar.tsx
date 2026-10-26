@@ -174,12 +174,7 @@ export function ComposerControlsBar(props: {
       ? [
           {
             id: "traits",
-            content: (
-              <>
-                <ComposerControlSeparator size={composerControlsCollapsed ? "xs" : "sm"} />
-                {restingProviderTraitsPicker}
-              </>
-            ),
+            content: restingProviderTraitsPicker,
           },
         ]
       : []),
@@ -237,7 +232,7 @@ export function ComposerControlsBar(props: {
               !showInlineRestingControls &&
                 "@max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none",
             )
-          : cn("min-w-13", potetoModeInvocation === null && "-ms-2.5")
+          : cn("min-w-13", potetoModeInvocation === null && "-ms-2")
       }
       terminalOpen={terminalOpen}
       open={modelPickerOpen}
