@@ -178,7 +178,10 @@ export const make = Effect.gen(function* () {
   });
 
   return SubmoduleRepositories.of({
-    list: (workspaceRoot, remoteUrl) => Cache.get(cache, `${workspaceRoot}\0${remoteUrl ?? ""}`),
+    list: Effect.fn("SubmoduleRepositories.list")(
+      (workspaceRoot: string, remoteUrl: string | null) =>
+        Cache.get(cache, `${workspaceRoot}\0${remoteUrl ?? ""}`),
+    ),
     listCheckedOut,
   });
 });

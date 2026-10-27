@@ -1,14 +1,7 @@
 /**
- * TCP port forwarding over WebSocket.
- *
- * Each WebSocket on `TCP_PORT_FORWARD_ROUTE?port=<n>` is one TCP connection to
- * this machine's loopback interface. Binary frames carry raw bytes both ways
- * with no framing protocol; either side closing ends the other. A
- * zero-length binary frame from the client is a half-close: the TCP write side
- * ends and replies keep flowing until the TCP side closes. The route
- * never accepts a host, so it cannot be used to reach other machines, and it
- * requires terminal operate scope because reaching local services is
- * shell-equivalent.
+ * One WebSocket is one raw TCP connection to loopback only, never another host. A zero-length
+ * client frame half-closes the TCP write side. Terminal operate scope is required because
+ * reaching local services is shell-equivalent.
  */
 import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
@@ -39,16 +32,15 @@ const parsePort = (value: string | null) => {
  * acquired, which is what performs the connect.
  */
 const connectLoopback = (port: number) => {
-  const open = (host: string) =>
-    Effect.gen(function* () {
-      const socket = yield* NodeSocket.makeNet({ host, port, openTimeout: "5 seconds" });
-      const reader = yield* socket.reader;
-      // The writer gets its own scope so a client half-close can end() just
-      // the TCP write side while replies keep arriving on the reader.
-      const writerScope = yield* Scope.fork(yield* Effect.scope);
-      const writer = yield* Scope.provide(socket.writer, writerScope);
-      return { reader, writer, endWriter: Scope.close(writerScope, Exit.void) };
-    });
+  const open = Effect.fn("TcpPortForwardRoute.open")(function* (host: string) {
+    const socket = yield* NodeSocket.makeNet({ host, port, openTimeout: "5 seconds" });
+    const reader = yield* socket.reader;
+    // The writer gets its own scope so a client half-close can end() just
+    // the TCP write side while replies keep arriving on the reader.
+    const writerScope = yield* Scope.fork(yield* Effect.scope);
+    const writer = yield* Scope.provide(socket.writer, writerScope);
+    return { reader, writer, endWriter: Scope.close(writerScope, Exit.void) };
+  });
   return open("127.0.0.1").pipe(Effect.catch(() => open("::1")));
 };
 
