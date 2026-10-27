@@ -22,6 +22,10 @@ import { linkedPullRequestSnapshotStatus, prStatusIndicator } from "../ThreadSta
 
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 
+// Unsynced links count as open, matching how the current pull request is picked.
+const isOpenLink = (link: ThreadPullRequestLink) =>
+  link.snapshot === null || link.snapshot.state === "open";
+
 function ThreadDetailsPrLinkRow({
   environmentId,
   link,
@@ -99,7 +103,8 @@ export function ThreadDetailsPrRows({
       ? []
       : pullRequestListLines(resolveThreadPullRequestChains(visibleThreadPullRequests(links)))
           .map((line) => line.link)
-          .filter((link) => threadPullRequestKeyOf(link) !== threadPullRequestKeyOf(currentLink));
+          .filter((link) => threadPullRequestKeyOf(link) !== threadPullRequestKeyOf(currentLink))
+          .toSorted((left, right) => Number(isOpenLink(right)) - Number(isOpenLink(left)));
   if (rest.length === 0) return currentRow;
 
   return (
