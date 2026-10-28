@@ -3,7 +3,7 @@ import type { EnvironmentId, ProjectId, ProjectSubmodule } from "@t3tools/contra
 import { useEffect, useEffectEvent, useState } from "react";
 import { create } from "zustand";
 
-import { findProjectByPath, inferNestedProjectTitle } from "../lib/projectPaths";
+import { findProjectByPath, inferNestedProjectTitle } from "@t3tools/client-runtime/state/projects";
 import { newProjectId } from "../lib/utils";
 import { useProjects } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
