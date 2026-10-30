@@ -390,8 +390,9 @@ function resolveEnvironmentIdentificationMode(input: {
   paletteThemeAllowsArtwork?: boolean;
 }): EnvironmentIdentificationMode {
   if (!input.settingsHydrated) return "none";
-  const isArtwork = input.mode !== "pill" && input.mode !== "none";
-  return input.paletteThemeActive && !input.paletteThemeAllowsArtwork && isArtwork
+  // Only the channel-following default yields to themes without artwork; an
+  // explicit Nightly or Dev artwork choice keeps it under any theme.
+  return input.mode === "artwork" && input.paletteThemeActive && !input.paletteThemeAllowsArtwork
     ? "pill"
     : input.mode;
 }
