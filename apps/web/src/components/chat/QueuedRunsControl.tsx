@@ -2,7 +2,10 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
 import { stripPotetoModePrefix } from "@t3tools/client-runtime/user-message";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  isAttachmentOnlyBootstrapPrompt,
+  replaceComposerContextReferences,
+} from "@t3tools/shared/composerContextReferences";
 import type {
   ChatAttachment as ContractChatAttachment,
   EnvironmentId,
@@ -238,11 +241,14 @@ export function QueuedRunsControl({
       </span>
       <ol className="flex flex-col items-end gap-3" id={queueListId}>
         {visibleItems.map((item, position) => {
-          const previewText = assistantCitationsToPlainText(
-            replaceComposerContextReferences(stripPotetoModePrefix(item.text), (reference) =>
-              reference.kind === "image" && item.thumbnails.length > 0 ? "" : reference.label,
-            ),
-          ).trim();
+          const queuedText = stripPotetoModePrefix(item.text);
+          const previewText = isAttachmentOnlyBootstrapPrompt(queuedText)
+            ? ""
+            : assistantCitationsToPlainText(
+                replaceComposerContextReferences(queuedText, (reference) =>
+                  reference.kind === "image" && item.thumbnails.length > 0 ? "" : reference.label,
+                ),
+              ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
           return (
             <li
