@@ -23,7 +23,10 @@ import {
   readPotetoModeInvocation,
   stripPotetoModePrefix,
 } from "@t3tools/client-runtime/user-message";
-import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
+import {
+  restoreAttachmentOnlyBootstrapPrompt,
+  stripAttachmentOnlyBootstrapPrompt,
+} from "@t3tools/shared/composerContextReferences";
 import { Atom } from "effect/reactivity";
 import type { RefObject } from "react";
 import { useAssetUrls } from "../../assets/assetUrls";
@@ -154,7 +157,7 @@ async function submitQueuedRunEdit(input: {
         threadId: editing.threadId,
         runId: editing.runId,
         text: applyPotetoModePrefix(
-          editText.length === 0 ? ATTACHMENT_ONLY_BOOTSTRAP_PROMPT : editText,
+          restoreAttachmentOnlyBootstrapPrompt(editText, uploads.length > 0),
           editing.potetoModeInvocation,
         ),
         edit: {
@@ -237,10 +240,10 @@ export function useQueuedRunEdit(input: {
     if (activeThreadId === null) return;
     if (editing !== null && editing.runId !== request.runId) clearEditDraft(editing.runId);
     const target = queuedEditDraftTarget(routeThreadRef, request.runId);
-    const editableText = stripPotetoModePrefix(request.text);
+    const text = stripAttachmentOnlyBootstrapPrompt(stripPotetoModePrefix(request.text));
     const store = useComposerDraftStore.getState();
     store.clearComposerContent(target);
-    store.setPrompt(target, editableText);
+    store.setPrompt(target, text);
     const threadRef = { environmentId, threadId: activeThreadId };
     queuedRunEdits.begin(
       editKey,
@@ -248,7 +251,7 @@ export function useQueuedRunEdit(input: {
         threadId: activeThreadId,
         runId: request.runId,
         messageId: request.messageId,
-        originalText: editableText,
+        originalText: text,
         potetoModeInvocation: readPotetoModeInvocation(request.text),
         existingAttachments: request.attachments,
         context: serverProjection?.messages.find((message) => message.id === request.messageId)
