@@ -5,6 +5,7 @@
  * stream.
  */
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import type { HttpClient } from "effect/http";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
@@ -24,7 +25,11 @@ export const mintEnvironmentWebSocketTicket = Effect.fn(
   "clientRuntime.state.mintEnvironmentWebSocketTicket",
 )(function* (
   prepared: PreparedConnection,
-): Effect.fn.Return<string, RemoteEnvironmentRequestError, HttpClient.HttpClient> {
+): Effect.fn.Return<
+  Redacted.Redacted<string>,
+  RemoteEnvironmentRequestError,
+  HttpClient.HttpClient
+> {
   const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
   const remoteAuthorization = yield* Effect.serviceOption(
     RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
@@ -57,7 +62,7 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
     return {
       httpBase,
       wsBase,
-      query: { wsTicket },
+      query: { wsTicket: Redacted.value(wsTicket) },
       credentials: false,
     };
   },
