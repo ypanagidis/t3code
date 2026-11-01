@@ -1,12 +1,11 @@
 /**
- * Credentials desktop main uses to open port-forward WebSockets for one
- * environment. Desktop main cannot send this client's bearer or DPoP headers,
- * so each forwarded TCP connection authenticates with a WebSocket ticket. A
- * ticket lives five minutes and is reusable for its lifetime, so callers mint a
- * fresh one well before it expires and on every reconnect.
+ * Desktop main cannot send this client's bearer or DPoP headers, so each forwarded TCP connection
+ * authenticates with a WebSocket ticket. A ticket is reusable for five minutes; mint a fresh one
+ * well before it expires and on every reconnect.
  */
 import type { DesktopPortForwardCredentialInput } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import type { HttpClient } from "effect/http";
 
@@ -44,5 +43,8 @@ export const resolvePortForwardCredential = Effect.fn(
     return yield* new PortForwardCredentialUnavailableError();
   }
   const wsTicket = yield* mintEnvironmentWebSocketTicket(prepared);
-  return { wsBaseUrl: portForwardWsBaseUrl(prepared.httpBaseUrl), wsTicket };
+  return {
+    wsBaseUrl: portForwardWsBaseUrl(prepared.httpBaseUrl),
+    wsTicket: Redacted.value(wsTicket),
+  };
 });
