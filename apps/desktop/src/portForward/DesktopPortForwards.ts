@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off -- Change coalescing and throughput sampling run at node:net socket callback boundaries outside Effect fibers.
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import {
   TCP_PORT_FORWARD_ROUTE,
   TCP_PORT_FORWARD_UPSTREAM_FAILED_CLOSE_CODE,
@@ -16,7 +16,6 @@ import type * as Scope from "effect/Scope";
 import * as NodeNet from "node:net";
 import * as NodePerfHooks from "node:perf_hooks";
 
-const NodeWS = NodeSocket.NodeWS;
 /** A zero-length binary frame tells the environment the local client half-closed. */
 const HALF_CLOSE_FRAME = new Uint8Array(0);
 
@@ -104,7 +103,7 @@ const toForward = (entry: ForwardEntry): DesktopPortForward => ({
   ...(entry.lastError === undefined ? {} : { lastError: entry.lastError }),
 });
 
-export const makePortForwardUrl = (credential: Credential, remotePort: number): string => {
+const makePortForwardUrl = (credential: Credential, remotePort: number): string => {
   const url = new URL(`${credential.wsBaseUrl.replace(/\/+$/, "")}${TCP_PORT_FORWARD_ROUTE}`);
   url.searchParams.set("port", String(remotePort));
   url.searchParams.set("wsTicket", credential.wsTicket);
@@ -144,15 +143,13 @@ const rejectionMessage = (statusCode: number | undefined): string => {
   }
 };
 
-const toBuffer = (data: NodeSocket.NodeWS.RawData): Buffer =>
+const toBuffer = (data: NodeWS.RawData): Buffer =>
   Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
 
 /**
- * Pipes one accepted TCP socket through one WebSocket, with backpressure both
- * ways. A local half-close is passed on and the reply still flows back; a
- * clean WebSocket close ends the local socket after its pending bytes flush,
- * and anything else destroys it. `onFailure` receives a message when the
- * connection never reached the remote port.
+ * A local half-close is passed on so the reply still flows back. A clean
+ * WebSocket close ends the local socket after pending bytes flush; anything
+ * else destroys it.
  */
 const pipeSocket = (
   socket: NodeNet.Socket,
@@ -230,7 +227,7 @@ const pipeSocket = (
   socket.on("error", () => {});
 };
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
