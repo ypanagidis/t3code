@@ -144,7 +144,7 @@ export function isScratchProject(
   );
 }
 
-export function inferProjectTitleFromPath(value: string): string {
+function inferProjectTitleFromPath(value: string): string {
   const normalized = normalizeProjectPathForDispatch(value);
   const absolutePath = splitAbsolutePath(normalized);
   if (absolutePath) {

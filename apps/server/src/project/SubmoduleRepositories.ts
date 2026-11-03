@@ -105,7 +105,7 @@ function parseDeclaredUrls(stdout: string): ReadonlyArray<string> {
   });
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const path = yield* Path.Path;
 

@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - The tests drive raw local TCP sockets, which HttpClient cannot express.
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import { assert, describe, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -39,10 +39,10 @@ const startFakeEnvironment = (behavior: FakeBehavior = { _tag: "echo" }) =>
         new Promise<{
           wsBaseUrl: string;
           requests: UpgradeRequest[];
-          server: NodeSocket.NodeWS.WebSocketServer;
+          server: NodeWS.WebSocketServer;
         }>((resolve) => {
           const requests: UpgradeRequest[] = [];
-          const server = new NodeSocket.NodeWS.WebSocketServer({
+          const server = new NodeWS.WebSocketServer({
             host: "127.0.0.1",
             port: 0,
             path: TCP_PORT_FORWARD_ROUTE,
