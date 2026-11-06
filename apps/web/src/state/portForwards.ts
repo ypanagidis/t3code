@@ -14,6 +14,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
@@ -68,11 +69,9 @@ export function getPortForwardBridge(): PortForwardBridge | null {
 }
 
 /**
- * Whether this client can forward ports from an environment. Only direct
- * routes qualify: SSH rides its own tunnel and bearer links connect straight
- * to the server. T3 Connect never carries forwarded traffic, and the primary
- * environment is this machine already. The server route needs terminal
- * access, so a session without it cannot forward.
+ * Only direct routes qualify: T3 Connect never carries forwarded traffic, and
+ * the primary environment is this machine already. The server route needs
+ * terminal access.
  */
 export function canForwardPorts(input: {
   readonly bridgeSupported: boolean;
@@ -112,6 +111,11 @@ export function useCanForwardPorts(environmentId: EnvironmentId | null): boolean
 
 const EMPTY_FORWARDS: ReadonlyArray<DesktopPortForward> = [];
 
+class PortForwardListError extends Schema.TaggedError<PortForwardListError>()(
+  "PortForwardListError",
+  { cause: Schema.Defect() },
+) {}
+
 const portForwardsAtom = Atom.make(
   Stream.callback<ReadonlyArray<DesktopPortForward>>((queue) =>
     Effect.gen(function* () {
@@ -127,7 +131,10 @@ const portForwardsAtom = Atom.make(
         ),
         (unsubscribe) => Effect.sync(unsubscribe),
       );
-      const initial = yield* Effect.tryPromise(() => bridge.listPortForwards()).pipe(
+      const initial = yield* Effect.tryPromise({
+        try: () => bridge.listPortForwards(),
+        catch: (cause) => new PortForwardListError({ cause }),
+      }).pipe(
         Effect.catch((error) =>
           Effect.logError("Failed to list port forwards", { error }).pipe(Effect.as(null)),
         ),
