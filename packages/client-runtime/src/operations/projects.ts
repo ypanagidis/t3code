@@ -19,7 +19,9 @@ import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
   findProjectByPath,
+  getBrowseParentPath,
   inferNestedProjectTitle,
+  inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
@@ -128,7 +130,8 @@ export function githubIncompleteOwnerRepositoryMessage(
 
 export function normalizePastedCloneUrl(input: string): string {
   const trimmed = input.trim();
-  return REPOSITORY_SHORTHAND.test(trimmed) ? (defaultHostCloneUrl(trimmed) ?? trimmed) : trimmed;
+  if (REPOSITORY_SHORTHAND.test(trimmed)) return defaultHostCloneUrl(trimmed) ?? trimmed;
+  return sourceControlClients.repositoryUrlFromPage(trimmed) ?? trimmed;
 }
 
 export function getDefaultCloneUrl(
@@ -296,6 +299,26 @@ export function getCloneDestinationBrowsePath(input: {
   return selectedDirectoryMatches
     ? selectedDirectoryPath
     : getCloneDestinationPath(selectedDirectoryPath, input.cloneDirectoryName);
+}
+
+// The native picker returns a full path, not a name under the browsed directory.
+// Split it and reuse the in-app rules so a folder already named after the
+// repository stays that folder instead of becoming repo/repo.
+export function getCloneDestinationForPickedFolder(input: {
+  readonly pickedPath: string;
+  readonly cloneDirectoryName: string;
+  readonly caseSensitive: boolean;
+}): string {
+  const parentPath = getBrowseParentPath(input.pickedPath);
+  if (parentPath === null) {
+    return getCloneDestinationPath(input.pickedPath, input.cloneDirectoryName);
+  }
+  return getCloneDestinationBrowsePath({
+    browseDirectoryPath: parentPath,
+    selectedDirectoryName: inferProjectTitleFromPath(input.pickedPath),
+    cloneDirectoryName: input.cloneDirectoryName,
+    caseSensitive: input.caseSensitive,
+  });
 }
 
 export function resolveAddProjectPath(input: {

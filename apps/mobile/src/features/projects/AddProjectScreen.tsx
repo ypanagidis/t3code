@@ -1426,7 +1426,6 @@ export function AddProjectDestinationScreen(props: {
 
     const originRoute = getActiveRoute(navigation);
     setIsSubmitting(true);
-    const projectId = ProjectId.make(uuidv4());
     const title = inferNestedProjectTitle(
       projects.filter((project) => project.environmentId === environment.environmentId),
       resolved.path,
@@ -1434,7 +1433,7 @@ export function AddProjectDestinationScreen(props: {
     const startResult = await startProjectClone({
       environmentId: environment.environmentId,
       input: {
-        projectId,
+        projectId: ProjectId.make(uuidv4()),
         title,
         createdAt: new Date().toISOString(),
         remoteUrl,
@@ -1445,6 +1444,7 @@ export function AddProjectDestinationScreen(props: {
       setError(errorMessage(Cause.squash(startResult.cause)));
     } else {
       void suggestAppAccessForRemote(checkAppAccess, environment.environmentId, remoteUrl);
+      const { projectId } = startResult.value;
       // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
       const project = await waitForProject(
         { environmentId: environment.environmentId, projectId },
