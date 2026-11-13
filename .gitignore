@@ -52,3 +52,5 @@ node_modules/
 
 # nix build output
 /result
+
+/packages/ssh/.ssh-launcher-test-*/
