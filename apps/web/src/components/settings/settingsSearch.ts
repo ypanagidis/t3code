@@ -466,6 +466,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
   },
   {
+    id: "history-navigation",
+    title: msg("Back and forward navigation"),
+    to: "/settings/general",
+    searchTerms: ["history arrows previous next swipe gesture trackpad sidebar buttons"],
+    desktopOnly: true,
+  },
+  {
     id: "boring-sidebar",
     title: "Boring sidebar (group by project)",
     to: "/settings/labs",

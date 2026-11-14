@@ -496,6 +496,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.historyNavigationEnabled !== DEFAULT_UNIFIED_SETTINGS.historyNavigationEnabled
+      ? ["Back and forward navigation"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -677,6 +680,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      historyNavigationEnabled: DEFAULT_UNIFIED_SETTINGS.historyNavigationEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -930,6 +934,39 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        {isElectron ? (
+          <SettingsRow
+            {...setting("history-navigation")}
+            description={
+              <T>
+                Show the back and forward buttons above the sidebar and follow trackpad swipes
+                between pages. Keyboard shortcuts keep working.
+              </T>
+            }
+            resetAction={
+              settings.historyNavigationEnabled !==
+              DEFAULT_UNIFIED_SETTINGS.historyNavigationEnabled ? (
+                <SettingResetButton
+                  label="back and forward navigation"
+                  onClick={() =>
+                    updateSettings({
+                      historyNavigationEnabled: DEFAULT_UNIFIED_SETTINGS.historyNavigationEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.historyNavigationEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ historyNavigationEnabled: Boolean(checked) })
+                }
+                aria-label={gt("Back and forward navigation")}
+              />
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       <SettingsSection id="confirmations" title={gt("Confirmations")}>

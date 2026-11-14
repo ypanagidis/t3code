@@ -4,7 +4,7 @@ import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useAtomValue } from "@effect/atom-react";
-import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { shortcutLabelForCommand } from "../../keybindings";
 import {
   navigateHistory,
@@ -51,6 +51,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     stageLabel,
     environmentIdentificationMode,
   );
+  const showHistoryNavigation = useShowHistoryNavigation(isElectron);
   const pillLabel =
     environmentIdentificationMode === "pill"
       ? resolveEnvironmentIdentificationPillLabel(stageLabel)
@@ -74,7 +75,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
         <div className="flex shrink-0 items-center gap-1">
           <SidebarBrand onBackdrop={backdropVariant !== null} />
-          {isElectron ? (
+          {showHistoryNavigation ? (
             <div className="hidden items-center md:flex">
               <HistoryNavigationButton direction="back" onBackdrop={backdropVariant !== null} />
               <HistoryNavigationButton direction="forward" onBackdrop={backdropVariant !== null} />
@@ -100,6 +101,7 @@ export function SidebarBrandWidthProbe({
   isElectron: boolean;
   onWidthChange: (width: number) => void;
 }) {
+  const showHistoryNavigation = useShowHistoryNavigation(isElectron);
   const observeWidth = (probe: HTMLDivElement) => {
     return observeResize(probe, ([entry]) => {
       if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
@@ -114,10 +116,17 @@ export function SidebarBrandWidthProbe({
     >
       <div className="ml-[var(--workspace-titlebar-content-left)] flex gap-1">
         <SidebarBrandMark onBackdrop={false} />
-        {isElectron ? <div className="w-[calc(2*var(--workspace-titlebar-control-size))]" /> : null}
+        {showHistoryNavigation ? (
+          <div className="w-[calc(2*var(--workspace-titlebar-control-size))]" />
+        ) : null}
       </div>
     </div>
   );
+}
+
+function useShowHistoryNavigation(isElectron: boolean): boolean {
+  const enabled = useClientSettings((settings) => settings.historyNavigationEnabled);
+  return isElectron && enabled;
 }
 
 function HistoryNavigationButton({
