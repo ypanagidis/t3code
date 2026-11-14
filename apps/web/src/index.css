@@ -1742,6 +1742,11 @@ body {
   overflow: hidden;
 }
 
+/* See lib/pinchZoomPanning.ts. html keeps `none` so panning past the edge never swipes history. */
+:root[data-pinch-zoomed] body * {
+  overscroll-behavior: auto !important;
+}
+
 #root {
   height: 100%;
   width: 100%;
