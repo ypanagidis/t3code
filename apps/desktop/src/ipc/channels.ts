@@ -148,3 +148,5 @@ export const UPDATE_PORT_FORWARD_CREDENTIAL_CHANNEL = "desktop:update-port-forwa
 export const PORT_FORWARDS_CHANGED_CHANNEL = "desktop:port-forwards-changed";
 
 export const RESTART_AUDIO_SERVICE_CHANNEL = "desktop:restart-audio-service";
+
+export const START_FILE_DRAG_CHANNEL = "desktop:start-file-drag";
