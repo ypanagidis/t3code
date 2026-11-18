@@ -1,9 +1,11 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { findProjectByPath, inferNestedProjectTitle } from "@t3tools/client-runtime/state/projects";
 import type { DesktopAppActivationRequest } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 import { offerSubmoduleAdoption } from "../components/AdoptSubmodulesDialog";
 import { handleDesktopAppActivationRequest } from "../desktopAppActivation";
+import { m } from "../i18n/messages";
 import { newProjectId } from "../lib/utils";
 import { readProjects, waitForProject } from "../state/entities";
 import { usePrimaryEnvironment } from "../state/environments";
@@ -71,7 +73,9 @@ export function useOpenLocalWorkspace() {
         });
         if (result._tag === "Failure") {
           const error = squashAtomCommandFailure(result);
-          throw error instanceof Error ? error : new Error("T3 Code could not add the project.");
+          throw error instanceof Error
+            ? error
+            : new Error(m(msg("T3 Code could not add the project.")));
         }
         offerSubmoduleAdoption({ environmentId, projectId });
         return projectId;
@@ -90,7 +94,7 @@ export function useOpenLocalWorkspace() {
           void updateProject({
             environmentId: projectRef.environmentId,
             input: { projectId: projectRef.projectId, archived: false },
-          }).then((result) => reportProjectFailure("Failed to unarchive project", result));
+          }).then((result) => reportProjectFailure(m(msg("Failed to unarchive project")), result));
         }
         return openThread(projectRef);
       },

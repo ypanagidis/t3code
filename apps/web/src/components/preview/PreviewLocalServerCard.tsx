@@ -1,7 +1,9 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { msg, useMessages } from "gt-react";
 import { MonitorDownIcon } from "lucide-react";
 import { useState } from "react";
 
+import type { MessageResolver } from "../../i18n/messages";
 import { useEnvironment } from "~/state/environments";
 import { startPortForward, useCanForwardPorts } from "~/state/portForwards";
 import { Button } from "../ui/button";
@@ -19,7 +21,8 @@ interface Props {
 }
 
 export function PreviewLocalServerCard({ threadRef, server, onOpen }: Props) {
-  const subtitle = describeServer(server);
+  const m = useMessages();
+  const subtitle = describeServer(server, m);
   const canForward = useCanForwardPorts(threadRef.environmentId);
   const row = (
     <DiscoveryListRow
@@ -57,18 +60,22 @@ function ForwardServerPortButton({
     try {
       const result = await startPortForward({
         environmentId: threadRef.environmentId,
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only
         environmentLabel: environment?.label ?? "Remote environment",
         remotePort: port,
       });
       toastManager.add({
         type: "success",
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only
         title: `Port ${port} forwarded`,
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only
         description: `Open 127.0.0.1:${result.localPort} on this computer. Manage forwards in Settings → Connections.`,
       });
     } catch (error) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
+          // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only
           title: `Could not forward port ${port}`,
           description: error instanceof Error ? error.message : String(error),
         }),
@@ -85,6 +92,7 @@ function ForwardServerPortButton({
             variant="ghost-muted"
             size="icon-xs"
             disabled={starting}
+            // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only
             aria-label={`Forward port ${port} to this computer`}
             onClick={() => void forward()}
           />
@@ -92,12 +100,13 @@ function ForwardServerPortButton({
       >
         <MonitorDownIcon className="size-3.5" />
       </TooltipTrigger>
+      {/* oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only */}
       <TooltipPopup side="top">Forward to this computer</TooltipPopup>
     </Tooltip>
   );
 }
 
-function describeServer(server: PreviewableServer): string {
+function describeServer(server: PreviewableServer, resolve: MessageResolver): string {
   if (server.processName) return server.processName;
-  return "Listening";
+  return resolve(msg("Listening", { $context: "a local server is listening on a port" }));
 }

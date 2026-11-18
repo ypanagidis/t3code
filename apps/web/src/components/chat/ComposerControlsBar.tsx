@@ -2,6 +2,7 @@ import type { ChatComposerProps } from "./ChatComposer";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
+import { useGT, useMessages } from "gt-react";
 import { CircleAlertIcon } from "lucide-react";
 import { PotatoIcon } from "../Icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -153,6 +154,8 @@ export function ComposerControlsBar(props: {
     measuredHiddenBlockCount,
   });
   const controlSize = composerControlsCollapsed ? "xs" : "sm";
+  const gt = useGT();
+  const m = useMessages();
   const applyThreadModelPick = useApplyThreadModelPick();
   const applyRouteThreadModelPick = useStableCallback(() => applyThreadModelPick(routeThreadRef));
   const traitsInput = resolveComposerTraitsInput({
@@ -169,7 +172,7 @@ export function ComposerControlsBar(props: {
     promptUltrathink,
     onPromptEdit,
   });
-  const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize);
+  const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize, m);
   const restingBlockDefs = showModeBlock
     ? [
         {
@@ -266,7 +269,7 @@ export function ComposerControlsBar(props: {
       className="shrink-0"
     >
       <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      {providerSetupInstanceId ? gt("Open provider settings") : gt("No provider available")}
     </ComposerControl>
   ) : (
     <>
@@ -278,6 +281,7 @@ export function ComposerControlsBar(props: {
                 size={composerControlsCollapsed ? "xs" : "sm"}
                 className="aspect-square px-0 aria-pressed:bg-transparent aria-pressed:hover:bg-accent"
                 aria-pressed={potetoMode}
+                // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-only feature, English only
                 aria-label="Poteto mode"
                 onClick={() => onPotetoModeChange(!potetoMode)}
               />
@@ -289,10 +293,12 @@ export function ComposerControlsBar(props: {
               className={potetoMode ? "text-primary" : undefined}
             />
           </TooltipTrigger>
+          {/* oxlint-disable t3code/no-untranslated-copy -- fork-only feature, English only */}
           <TooltipPopup side="top">
             Poteto mode: runs {potetoModeInvocation} on every prompt in this thread. Best for
             non-trivial work like features, bug fixes, and refactors. Skip it for quick questions.
           </TooltipPopup>
+          {/* oxlint-enable t3code/no-untranslated-copy */}
         </Tooltip>
       ) : null}
       {composerModelPicker}

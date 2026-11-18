@@ -1,8 +1,9 @@
+/* oxlint-disable t3code/no-untranslated-copy -- fork-only feature (port forwarding), English only */
 import type { DesktopPortForward } from "@t3tools/contracts";
 import { ArrowRightIcon, CopyIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { EnvironmentPresentation } from "~/state/environments";
 import {
   formatByteCount,
@@ -51,7 +52,7 @@ function PortForwardRow({ forward }: { readonly forward: DesktopPortForward }) {
   const address = `127.0.0.1:${forward.localPort}`;
   const [stopping, setStopping] = useState(false);
   const { copyToClipboard } = useCopyToClipboard<{ address: string }>({
-    target: "forwarded address",
+    target: namedClipboardTarget("forwarded address"),
     onCopy: ({ address: copied }) => {
       toastManager.add({ type: "success", title: "Address copied", description: copied });
     },
