@@ -157,7 +157,9 @@ const make = Effect.gen(function* () {
       const identity = buildRepositoryIdentity({
         remoteName: "origin",
         remoteUrl: url,
+        keyUrl: url,
         originUrl: undefined,
+        originKeyUrl: undefined,
         rootPath: workspaceRoot,
       });
       // A local path or an unrecognisable URL names nothing a host could list.
