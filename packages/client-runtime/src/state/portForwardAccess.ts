@@ -11,7 +11,7 @@ import type { HttpClient } from "effect/http";
 
 import type { PreparedConnection } from "../connection/model.ts";
 import type { RemoteEnvironmentRequestError } from "../rpc/http.ts";
-import { mintEnvironmentWebSocketTicket } from "./deviceHubAccess.ts";
+import { mintMediaTicket } from "./deviceHubAccess.ts";
 
 export type PortForwardCredential = Omit<DesktopPortForwardCredentialInput, "environmentId">;
 
@@ -42,9 +42,9 @@ export const resolvePortForwardCredential = Effect.fn(
   if (prepared.httpAuthorization === null) {
     return yield* new PortForwardCredentialUnavailableError();
   }
-  const wsTicket = yield* mintEnvironmentWebSocketTicket(prepared);
+  const ticket = yield* mintMediaTicket(prepared);
   return {
     wsBaseUrl: portForwardWsBaseUrl(prepared.httpBaseUrl),
-    wsTicket: Redacted.value(wsTicket),
+    wsTicket: Redacted.value(ticket.ticket),
   };
 });

@@ -20,21 +20,15 @@ export { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts
 
 const TICKET_TIMEOUT_MS = 8_000;
 
-/** Mints a media-route WebSocket ticket (device hub, port forwarding) for a bearer or DPoP connection. */
-export const mintEnvironmentWebSocketTicket = Effect.fn(
-  "clientRuntime.state.mintEnvironmentWebSocketTicket",
-)(function* (
+/** Reusable across media requests until it expires; only for connections that send credentials. */
+export const mintMediaTicket = Effect.fn("clientRuntime.state.mintMediaTicket")(function* (
   prepared: PreparedConnection,
-): Effect.fn.Return<
-  Redacted.Redacted<string>,
-  RemoteEnvironmentRequestError,
-  HttpClient.HttpClient
-> {
+) {
   const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
   const remoteAuthorization = yield* Effect.serviceOption(
     RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
   );
-  const ticket = yield* executeAuthenticatedEnvironmentHttpRequest({
+  return yield* executeAuthenticatedEnvironmentHttpRequest({
     prepared,
     signer,
     remoteAuthorization,
@@ -45,7 +39,6 @@ export const mintEnvironmentWebSocketTicket = Effect.fn(
     request: ({ client, headers }) =>
       client.webSocketTicketFor({ headers, params: { use: "media" } }),
   });
-  return ticket.ticket;
 });
 
 export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDeviceHubAccess")(
@@ -58,11 +51,11 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
     if (input.prepared.httpAuthorization === null) {
       return { httpBase, wsBase, query: {}, credentials: true };
     }
-    const wsTicket = yield* mintEnvironmentWebSocketTicket(input.prepared);
+    const ticket = yield* mintMediaTicket(input.prepared);
     return {
       httpBase,
       wsBase,
-      query: { wsTicket: Redacted.value(wsTicket) },
+      query: { wsTicket: Redacted.value(ticket.ticket) },
       credentials: false,
     };
   },
