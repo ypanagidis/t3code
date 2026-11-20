@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
 
 import { SnapShotSource } from "./chatAttachment.ts";
-import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId, PortSchema, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,
@@ -12,11 +12,6 @@ import type {
 import { AuthAccessTokenResult, AuthSessionState } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import type {
-  DesktopPortForward,
-  DesktopPortForwardCredentialInput,
-  DesktopPortForwardStartInput,
-} from "./portForward.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 import { KeybindingShortcut, type PreviewForwardedShortcut } from "./keybindings.ts";
@@ -1007,6 +1002,22 @@ export const DesktopPreviewTunnelAccessResolutionInputSchema = Schema.Struct({
   url: Schema.NullOr(Schema.String),
 });
 
+/** A loopback port of another environment, reachable on this machine's 127.0.0.1. */
+export const DesktopPortForwardSchema = Schema.Struct({
+  environmentId: EnvironmentId,
+  remotePort: PortSchema,
+  /** The same as `remotePort` unless that port was taken here. */
+  localPort: PortSchema,
+});
+export type DesktopPortForward = typeof DesktopPortForwardSchema.Type;
+
+export const DesktopSharesLoopbackInputSchema = Schema.Struct({ environmentId: EnvironmentId });
+
+export const DesktopPortForwardInputSchema = Schema.Struct({
+  environmentId: EnvironmentId,
+  remotePort: PortSchema,
+});
+
 export const DesktopPreviewClearDataInputSchema = Schema.Struct({
   environmentId: EnvironmentId,
   /** Omit to clear every profile; otherwise only this profile's partition. */
@@ -1143,18 +1154,6 @@ export interface DesktopBridge {
   ) => Promise<AuthAccessTokenResult>;
   fetchSshSessionState: (httpBaseUrl: string, bearerToken: string) => Promise<AuthSessionState>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
-  /**
-   * TCP port forwards hosted by desktop main on 127.0.0.1. Absent on desktop
-   * builds predating port forwarding. Forwards live until stopped or the app quits.
-   */
-  startPortForward?: (input: DesktopPortForwardStartInput) => Promise<DesktopPortForward>;
-  stopPortForward?: (forwardId: string) => Promise<void>;
-  listPortForwards?: () => Promise<readonly DesktopPortForward[]>;
-  /** Replace the WebSocket ticket new connections use for an environment's forwards. */
-  updatePortForwardCredential?: (input: DesktopPortForwardCredentialInput) => Promise<void>;
-  onPortForwardsChanged?: (
-    listener: (forwards: readonly DesktopPortForward[]) => void,
-  ) => () => void;
   /** Fires with a prompt's request id once it is answered, cancelled, expired or abandoned. */
   onSshPasswordPromptSettled: (listener: (requestId: string) => void) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
@@ -1341,6 +1340,13 @@ export interface DesktopPreviewBridge {
     listener: (request: DesktopPreviewTunnelAccessRequest) => void,
   ) => () => void;
   resolveTunnelAccess: (requestId: string, url: string | null) => Promise<void>;
+  /** Forwards an environment's loopback port to this machine until stopped or the app quits. */
+  forwardPort: (environmentId: EnvironmentId, remotePort: number) => Promise<DesktopPortForward>;
+  stopPortForward: (environmentId: EnvironmentId, remotePort: number) => Promise<void>;
+  listPortForwards: () => Promise<ReadonlyArray<DesktopPortForward>>;
+  /** Whether the environment runs on this machine, where its ports need no forward. */
+  sharesLoopback: (environmentId: EnvironmentId) => Promise<boolean>;
+  onPortForwards: (listener: (forwards: ReadonlyArray<DesktopPortForward>) => void) => () => void;
   listBrowserImportSources: () => Promise<ReadonlyArray<BrowserImportSource>>;
   importBrowserCookies: (input: {
     readonly environmentId: EnvironmentId;

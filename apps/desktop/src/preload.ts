@@ -216,22 +216,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.SSH_PASSWORD_PROMPT_CHANNEL, wrappedListener);
     };
   },
-  startPortForward: (input) => ipcRenderer.invoke(IpcChannels.START_PORT_FORWARD_CHANNEL, input),
-  stopPortForward: (forwardId) =>
-    ipcRenderer.invoke(IpcChannels.STOP_PORT_FORWARD_CHANNEL, forwardId),
-  listPortForwards: () => ipcRenderer.invoke(IpcChannels.LIST_PORT_FORWARDS_CHANNEL),
-  updatePortForwardCredential: (input) =>
-    ipcRenderer.invoke(IpcChannels.UPDATE_PORT_FORWARD_CREDENTIAL_CHANNEL, input),
-  onPortForwardsChanged: (listener) => {
-    const wrappedListener = (_event: Electron.IpcRendererEvent, forwards: unknown) => {
-      if (!Array.isArray(forwards)) return;
-      listener(forwards as Parameters<typeof listener>[0]);
-    };
-    ipcRenderer.on(IpcChannels.PORT_FORWARDS_CHANGED_CHANNEL, wrappedListener);
-    return () => {
-      ipcRenderer.removeListener(IpcChannels.PORT_FORWARDS_CHANGED_CHANNEL, wrappedListener);
-    };
-  },
   onSshPasswordPromptSettled: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, requestId: unknown) => {
       if (typeof requestId !== "string") return;
@@ -465,6 +449,22 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
     resolveTunnelAccess: (requestId, url) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_TUNNEL_ACCESS_RESOLVE_CHANNEL, { requestId, url }),
+    forwardPort: (environmentId, remotePort) =>
+      ipcRenderer.invoke(IpcChannels.PORT_FORWARD_START_CHANNEL, { environmentId, remotePort }),
+    stopPortForward: (environmentId, remotePort) =>
+      ipcRenderer.invoke(IpcChannels.PORT_FORWARD_STOP_CHANNEL, { environmentId, remotePort }),
+    listPortForwards: () => ipcRenderer.invoke(IpcChannels.PORT_FORWARD_LIST_CHANNEL),
+    sharesLoopback: (environmentId) =>
+      ipcRenderer.invoke(IpcChannels.PORT_FORWARD_SHARES_LOOPBACK_CHANNEL, { environmentId }),
+    onPortForwards: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, forwards: unknown) => {
+        if (!Array.isArray(forwards)) return;
+        listener(forwards);
+      };
+      ipcRenderer.on(IpcChannels.PORT_FORWARD_CHANGE_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.PORT_FORWARD_CHANGE_CHANNEL, wrappedListener);
+    },
     setAnnotationTheme: (theme) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_SET_ANNOTATION_THEME_CHANNEL, { theme }),
     setAnnotationSendEnabled: (tabId, enabled) =>
