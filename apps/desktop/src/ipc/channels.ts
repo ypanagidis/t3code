@@ -128,6 +128,11 @@ export const PREVIEW_OPEN_LINK_CHANNEL = "desktop:preview-open-link";
 export const PREVIEW_FIND_RESULT_CHANNEL = "desktop:preview-find-result";
 export const PREVIEW_TUNNEL_ACCESS_REQUEST_CHANNEL = "desktop:preview-tunnel-access-request";
 export const PREVIEW_TUNNEL_ACCESS_RESOLVE_CHANNEL = "desktop:preview-tunnel-access-resolve";
+export const PORT_FORWARD_START_CHANNEL = "desktop:port-forward-start";
+export const PORT_FORWARD_STOP_CHANNEL = "desktop:port-forward-stop";
+export const PORT_FORWARD_LIST_CHANNEL = "desktop:port-forward-list";
+export const PORT_FORWARD_CHANGE_CHANNEL = "desktop:port-forward-change";
+export const PORT_FORWARD_SHARES_LOOPBACK_CHANNEL = "desktop:port-forward-shares-loopback";
 
 export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
 
@@ -142,12 +147,6 @@ export const RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:receive-provider-
 export const CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:cancel-provider-auth-callback";
 export const TAKE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:take-legacy-local-storage";
 export const COMPLETE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:complete-legacy-local-storage";
-
-export const START_PORT_FORWARD_CHANNEL = "desktop:start-port-forward";
-export const STOP_PORT_FORWARD_CHANNEL = "desktop:stop-port-forward";
-export const LIST_PORT_FORWARDS_CHANNEL = "desktop:list-port-forwards";
-export const UPDATE_PORT_FORWARD_CREDENTIAL_CHANNEL = "desktop:update-port-forward-credential";
-export const PORT_FORWARDS_CHANGED_CHANNEL = "desktop:port-forwards-changed";
 
 export const RESTART_AUDIO_SERVICE_CHANNEL = "desktop:restart-audio-service";
 

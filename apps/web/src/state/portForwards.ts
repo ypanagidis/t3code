@@ -1,145 +1,48 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 import {
-  type PortForwardCredential,
-  resolvePortForwardCredential,
-} from "@t3tools/client-runtime/state/portForwardAccess";
-import {
-  AuthTerminalOperateScope,
-  type DesktopBridge,
+  allowsPreviewTunnel,
   type DesktopPortForward,
   type EnvironmentId,
-  type ExecutionEnvironmentCapabilities,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import { Atom } from "effect/reactivity";
+import { msg } from "gt-react";
 
-import { connectionAtomRuntime } from "../connection/runtime";
-import { appAtomRegistry } from "../rpc/atomRegistry";
-import { useEnvironment } from "./environments";
-import { environmentSession, useEnvironmentScope, usePreparedConnection } from "./session";
+import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 
-/**
- * TCP port forwards hosted by desktop main. Each one listens on 127.0.0.1 on
- * this computer and pipes connections to a port on a remote environment over
- * a WebSocket. Desktop only; browsers and mobile cannot listen on TCP.
- */
-type PortForwardBridge = Required<
-  Pick<
-    DesktopBridge,
-    | "startPortForward"
-    | "stopPortForward"
-    | "listPortForwards"
-    | "updatePortForwardCredential"
-    | "onPortForwardsChanged"
-  >
->;
-
-export function getPortForwardBridge(): PortForwardBridge | null {
-  const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
-  if (bridge === undefined) return null;
-  const {
-    startPortForward,
-    stopPortForward,
-    listPortForwards,
-    updatePortForwardCredential,
-    onPortForwardsChanged,
-  } = bridge;
-  // Desktop builds predating port forwarding lack these.
-  if (
-    startPortForward === undefined ||
-    stopPortForward === undefined ||
-    listPortForwards === undefined ||
-    updatePortForwardCredential === undefined ||
-    onPortForwardsChanged === undefined
-  ) {
-    return null;
-  }
-  return {
-    startPortForward,
-    stopPortForward,
-    listPortForwards,
-    updatePortForwardCredential,
-    onPortForwardsChanged,
-  };
-}
-
-/**
- * Only direct routes qualify: T3 Connect never carries forwarded traffic, and
- * the primary environment is this machine already. The server route needs
- * terminal access.
- */
-export function canForwardPorts(input: {
-  readonly bridgeSupported: boolean;
-  readonly connected: boolean;
-  readonly canOperateTerminal: boolean;
-  readonly target: ConnectionTarget | null;
-  readonly capabilities:
-    | Pick<ExecutionEnvironmentCapabilities, "tcpPortForwarding">
-    | null
-    | undefined;
-}): boolean {
-  const { bridgeSupported, connected, canOperateTerminal, target } = input;
-  if (!bridgeSupported || !connected || !canOperateTerminal || target === null) return false;
-  if (input.capabilities?.tcpPortForwarding !== true) return false;
-  switch (target._tag) {
-    case "SshConnectionTarget":
-    case "BearerConnectionTarget":
-      return true;
-    case "PrimaryConnectionTarget":
-    case "RelayConnectionTarget":
-      return false;
-  }
-}
-
-export function useCanForwardPorts(environmentId: EnvironmentId | null): boolean {
-  const environment = useEnvironment(environmentId);
-  const prepared = usePreparedConnection(environmentId);
-  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  return canForwardPorts({
-    bridgeSupported: getPortForwardBridge() !== null,
-    connected: environment?.connection.phase === "connected",
-    canOperateTerminal,
-    target: Option.isSome(prepared) ? prepared.value.target : null,
-    capabilities: environment?.serverConfig?.environment.capabilities,
-  });
-}
+import { tunnelsEnvironmentLoopback } from "../browser/browserTargetResolver";
+import { m } from "../i18n/messages";
+import { environmentAtomList } from "./environmentAtomList";
+import { environmentSession } from "./session";
 
 const EMPTY_FORWARDS: ReadonlyArray<DesktopPortForward> = [];
 
-class PortForwardListError extends Schema.TaggedError<PortForwardListError>()(
-  "PortForwardListError",
-  { cause: Schema.Defect() },
-) {}
+const previewBridge = () =>
+  typeof window === "undefined" ? undefined : window.desktopBridge?.preview;
 
+/** Ports of other environments the desktop app forwards to this machine; empty elsewhere. */
 const portForwardsAtom = Atom.make(
   Stream.callback<ReadonlyArray<DesktopPortForward>>((queue) =>
     Effect.gen(function* () {
-      const bridge = getPortForwardBridge();
-      if (bridge === null) return yield* Effect.never;
-      let received = false;
+      const bridge = previewBridge();
+      if (!bridge) return yield* Effect.never;
+      let changed = false;
       yield* Effect.acquireRelease(
         Effect.sync(() =>
-          bridge.onPortForwardsChanged((forwards) => {
-            received = true;
+          bridge.onPortForwards((forwards) => {
+            changed = true;
             Queue.offerUnsafe(queue, forwards);
           }),
         ),
         (unsubscribe) => Effect.sync(unsubscribe),
       );
-      const initial = yield* Effect.tryPromise({
-        try: () => bridge.listPortForwards(),
-        catch: (cause) => new PortForwardListError({ cause }),
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.logError("Failed to list port forwards", { error }).pipe(Effect.as(null)),
-        ),
-      );
-      if (!received && initial !== null) Queue.offerUnsafe(queue, initial);
+      const initial = yield* Effect.promise(() => bridge.listPortForwards());
+      if (!changed) Queue.offerUnsafe(queue, initial);
       return yield* Effect.never;
     }),
   ),
@@ -150,73 +53,110 @@ export function usePortForwards(): ReadonlyArray<DesktopPortForward> {
   return AsyncResult.getOrElse(useAtomValue(portForwardsAtom), () => EMPTY_FORWARDS);
 }
 
-// Keyed on the prepared connection, so a re-pair or a new SSH tunnel port
-// produces a new base URL and ticket.
-const portForwardCredentialAtom = Atom.family((environmentId: EnvironmentId) =>
-  connectionAtomRuntime
-    .atom((get) => {
-      const prepared = Option.getOrNull(
-        get(environmentSession.preparedConnectionValueAtom(environmentId)),
-      );
-      if (prepared === null) return Effect.never;
-      return resolvePortForwardCredential(prepared);
-    })
-    .pipe(Atom.withLabel(`port-forward-credential:${environmentId}`)),
-);
+/** Only the desktop app forwards, and only from environments whose tunnel it may use. */
+export const canForwardPorts = (environment: {
+  readonly entry: { readonly target: ConnectionTarget };
+  readonly serverConfig: Parameters<typeof allowsPreviewTunnel>[0] | null;
+}): boolean =>
+  previewBridge() !== undefined &&
+  tunnelsEnvironmentLoopback(environment.entry.target) &&
+  environment.serverConfig !== null &&
+  allowsPreviewTunnel(environment.serverConfig);
 
-/** Mints a fresh ticket for desktop main to open forwarded connections with. */
-export function readPortForwardCredential(
-  environmentId: EnvironmentId,
-): Promise<PortForwardCredential> {
-  const atom = portForwardCredentialAtom(environmentId);
-  appAtomRegistry.refresh(atom);
-  return Effect.runPromise(
-    AtomRegistry.getResult(appAtomRegistry, atom, { suspendOnWaiting: true }).pipe(
-      Effect.timeout("10 seconds"),
-    ),
-  );
+/**
+ * Whether the environment runs on another machine. A saved route can still lead back to this
+ * computer (its own Tailscale address, a relay), where a forward would only loop.
+ */
+export type ForwardLocality = "remote" | "local" | "pending" | "unknown";
+
+class PortForwardLocalityError extends Schema.TaggedError<PortForwardLocalityError>()(
+  "PortForwardLocalityError",
+  { environmentId: Schema.String, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return m(msg("Could not tell whether this environment runs on this computer."));
+  }
 }
 
-export async function startPortForward(input: {
-  readonly environmentId: EnvironmentId;
-  readonly environmentLabel: string;
-  readonly remotePort: number;
-  readonly localPort?: number | undefined;
-}): Promise<DesktopPortForward> {
-  const bridge = getPortForwardBridge();
-  if (bridge === null) throw new Error("Port forwarding needs the T3 Code desktop app.");
-  const credential = await readPortForwardCredential(input.environmentId);
-  return bridge.startPortForward({
-    environmentId: input.environmentId,
-    environmentLabel: input.environmentLabel,
-    remotePort: input.remotePort,
-    ...(input.localPort === undefined ? {} : { localPort: input.localPort }),
-    ...credential,
+const localityResultAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) => {
+    // Each established connection probes anew, so a failed probe never outlives a reconnect.
+    const connection = AsyncResult.getOrElse(
+      get(environmentSession.transportSessionAtom(environmentId)),
+      () => Option.none(),
+    );
+    const bridge = previewBridge();
+    if (Option.isNone(connection) || bridge === undefined) return Effect.never;
+    return Effect.tryPromise({
+      try: () => bridge.sharesLoopback(environmentId),
+      catch: (cause) => new PortForwardLocalityError({ environmentId, cause }),
+    }).pipe(Effect.map((shares): ForwardLocality => (shares ? "local" : "remote")));
+  }).pipe(
+    Atom.setIdleTTL(10 * 60_000),
+    Atom.withLabel(`desktop:port-forward-locality-probe:${environmentId}`),
+  ),
+);
+
+const localityAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ForwardLocality => {
+    const result = get(localityResultAtom(environmentId));
+    if (AsyncResult.isSuccess(result)) return result.value;
+    return AsyncResult.isFailure(result) ? "unknown" : "pending";
+  }).pipe(Atom.withLabel(`desktop:port-forward-locality:${environmentId}`)),
+);
+
+const NO_LOCALITY = Atom.make<ForwardLocality>("unknown").pipe(
+  Atom.withLabel("desktop:port-forward-locality:none"),
+);
+
+/** Pass `null` for an environment the desktop doesn't tunnel to; that one never probes. */
+export function useForwardLocality(environmentId: EnvironmentId | null): ForwardLocality {
+  return useAtomValue(environmentId === null ? NO_LOCALITY : localityAtom(environmentId));
+}
+
+export const forwardLocalitiesAtom = environmentAtomList(
+  "desktop:port-forward-localities",
+  localityAtom,
+);
+
+export const findPortForward = (
+  forwards: ReadonlyArray<DesktopPortForward>,
+  environmentId: EnvironmentId,
+  remotePort: number,
+) =>
+  forwards.find(
+    (forward) => forward.environmentId === environmentId && forward.remotePort === remotePort,
+  );
+
+export function forwardPort(environmentId: EnvironmentId, remotePort: number) {
+  const bridge = previewBridge();
+  if (!bridge) return Promise.reject(new Error(m(msg("Port forwarding needs the desktop app."))));
+  return bridge.forwardPort(environmentId, remotePort).catch((error: unknown) => {
+    // Electron flattens main-process errors into "Error invoking remote method '…': Tag: text".
+    const raw = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      raw.includes("LoopbackTunnelSameMachineError")
+        ? m(
+            msg("This environment runs on this computer, so localhost:{port} already reaches it.", {
+              port: remotePort,
+            }),
+          )
+        : raw.includes("LoopbackTunnelUnavailableError")
+          ? m(msg("This environment can't be reached right now. Try again once it reconnects."))
+          : raw.replace(/^Error invoking remote method '[^']*':\s*(\w+Error:\s*)?/u, ""),
+      { cause: error },
+    );
   });
 }
 
-export async function stopPortForward(forwardId: string): Promise<void> {
-  await getPortForwardBridge()?.stopPortForward(forwardId);
+export function stopPortForward(environmentId: EnvironmentId, remotePort: number) {
+  return previewBridge()?.stopPortForward(environmentId, remotePort) ?? Promise.resolve();
 }
 
-/** Parses a TCP port typed by the user; null when it is not 1..65535. */
-export function parsePortInput(value: string): number | null {
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const port = Number(trimmed);
-  return port >= 1 && port <= 65_535 ? port : null;
-}
-
-const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
-
-/** "0 B", "512 B", "1.5 KB", "12 MB" for forwarded traffic totals and rates. */
-export function formatByteCount(bytes: number): string {
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = unit === 0 || value >= 10 ? 0 : 1;
-  return `${value.toFixed(digits)} ${BYTE_UNITS[unit]}`;
+/** `url` with its host and port moved to the forward's end on this machine. */
+export function forwardedUrl(forward: DesktopPortForward, url?: string): string {
+  const local = new URL(url ?? "http://localhost/");
+  local.hostname = "localhost";
+  local.port = String(forward.localPort);
+  return local.toString();
 }
