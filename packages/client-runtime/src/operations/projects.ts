@@ -3,6 +3,7 @@ import type {
   CommandId,
   EnvironmentId,
   ProjectMutation,
+  ProjectTrackedFolder,
   ProjectId,
   ServerConfig,
   ServerSettings,
@@ -411,6 +412,7 @@ export function buildProjectCreateCommand(input: {
   readonly workspaceRoot: string;
   /** The environment's projects, so one added inside another is titled after it. */
   readonly projects: ReadonlyArray<{ readonly title: string; readonly workspaceRoot: string }>;
+  readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
 }): Extract<ProjectMutation, { type: "project.create" }> {
   return {
     type: "project.create",
@@ -420,5 +422,8 @@ export function buildProjectCreateCommand(input: {
     workspaceRoot: input.workspaceRoot,
     createWorkspaceRootIfMissing: true,
     defaultModelSelection: null,
+    ...(input.trackedFolders === undefined || input.trackedFolders.length === 0
+      ? {}
+      : { trackedFolders: input.trackedFolders }),
   };
 }
