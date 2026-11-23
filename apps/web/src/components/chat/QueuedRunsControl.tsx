@@ -11,6 +11,7 @@ import {
   isAttachmentOnlyBootstrapPrompt,
   replaceComposerContextReferences,
 } from "@t3tools/shared/composerContextReferences";
+import { composerFileLinksToPlainText } from "@t3tools/shared/composerInlineTokens";
 import {
   parseGoalCommand,
   type ChatAttachment as ContractChatAttachment,
@@ -274,7 +275,9 @@ export function QueuedRunsControl({
           const previewText = isAttachmentOnlyBootstrapPrompt(queuedText)
             ? ""
             : assistantCitationsToPlainText(
-                replaceComposerContextReferences(queuedText, (reference) => reference.label),
+                composerFileLinksToPlainText(
+                  replaceComposerContextReferences(queuedText, (reference) => reference.label),
+                ),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
           // The server decides on the agent's text, and a goal command can stop the turn.
