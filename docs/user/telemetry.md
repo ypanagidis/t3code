@@ -80,7 +80,8 @@ a [managed policy](./managed-policy.md#other-capabilities). This does not contro
 separate browser or mobile clients.
 
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
-Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
+Linux, so export it there and restart the app. Relay tracing from the server can take a second
+restart to follow a change made there. On Windows, set it as a user environment variable.
 
 The web app in a browser, including one the `t3` CLI opens, does not read these environment
 variables and never sends relay connection traces.
@@ -95,10 +96,9 @@ but an error message can quote a value the app was handling.
 
 To send them, turn on **Send crash reports** in **Settings > About T3 Code > Diagnostics**.
 
-The mobile app also sends relay connection traces when its build has tracing configured. These
-carry an identifier for the current app session. **Send crash reports** does not control these
-traces, and the mobile app has no separate relay tracing toggle. Server environment variables and
-managed policy do not disable mobile tracing.
+When **Send crash reports** is on and its build has tracing configured, the mobile app also sends
+relay connection traces. These carry an identifier for the current app session. Server environment
+variables and managed policy do not control mobile tracing.
 
 ## Agent activity for mobile notifications
 

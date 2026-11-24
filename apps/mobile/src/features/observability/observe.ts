@@ -1,6 +1,8 @@
 import Constants from "expo-constants";
 import { Observe } from "expo-observe";
 
+import { setDiagnosticsSendingEnabled } from "./diagnosticsConsent";
+
 // Importing expo-observe installs its global JS error handler; reports leave only through the relay.
 const relayUrl: unknown = Constants.expoConfig?.extra?.relay?.url;
 const appVariant: unknown = Constants.expoConfig?.extra?.appVariant;
@@ -38,6 +40,7 @@ export async function setCrashReportsEnabled(enabled: boolean) {
     dispatchingEnabled,
     ...(typeof appVariant === "string" ? { environment: appVariant } : {}),
   });
+  setDiagnosticsSendingEnabled(dispatchingEnabled);
 }
 
 if (!crashReportingAvailable) {
@@ -54,8 +57,11 @@ if (!crashReportingAvailable) {
         changedSinceLoad()
           ? undefined
           : setCrashReportsEnabled(preferences.crashReportsEnabled === true),
-      // Observe keeps the last choice it was given, which stands in for the unreadable one.
-      (error: unknown) => console.warn("[observe] could not read the crash report setting", error),
+      // Observe's native default sends, so an unreadable setting must not leave it unconfigured.
+      (error: unknown) => {
+        console.warn("[observe] could not read the crash report setting", error);
+        return changedSinceLoad() ? undefined : setCrashReportsEnabled(false);
+      },
     )
     .catch((error: unknown) => {
       console.warn("[observe] could not apply the crash report setting", error);
