@@ -7,6 +7,7 @@ import { vi } from "vite-plus/test";
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 
+import { setDiagnosticsSendingEnabled } from "./diagnosticsConsent";
 import * as Tracing from "./tracing";
 
 vi.mock("expo-constants", () => ({
@@ -17,46 +18,55 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
-it.effect("does not let OTLP serialization failures alter application effects", () => {
-  const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }));
-  const layerTracing = Tracing.layerFromConfig(
-    {
-      tracesUrl: "https://api.axiom.test/v1/traces",
-      tracesDataset: "mobile-traces",
-      tracesToken: "public-ingest-token",
-    },
-    {
-      appVariant: "test",
-      serviceInstanceId: "test-instance",
-      serviceVersion: "1.2.3",
-    },
-  ).pipe(Layer.provide(layerRemoteHttpClient(fetchFn)));
-  const failure = { durationNanos: 1n };
-  const layerTracedApplication = Layer.effectDiscard(
-    Effect.fail(failure).pipe(
-      Effect.withSpan("mobile.test.failed-span"),
-      withRelayClientTracing,
-      Effect.exit,
-      Effect.flatMap((exit) => {
-        const reason = exit._tag === "Failure" ? exit.cause.reasons[0] : undefined;
-        return reason && Cause.isFailReason(reason)
-          ? Effect.sync(() => {
-              expect(reason.error).toBe(failure);
-            })
-          : Effect.die(new Error("Expected the original typed failure."));
-      }),
-    ),
-  ).pipe(Layer.provide(layerTracing));
+it.effect.each([
+  { consent: true, exports: 1 },
+  { consent: false, exports: 0 },
+])(
+  "does not let OTLP serialization failures alter application effects (consent: $consent)",
+  ({ consent, exports }) => {
+    setDiagnosticsSendingEnabled(consent);
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }));
+    const layerTracing = Tracing.layerFromConfig(
+      {
+        tracesUrl: "https://api.axiom.test/v1/traces",
+        tracesDataset: "mobile-traces",
+        tracesToken: "public-ingest-token",
+      },
+      {
+        appVariant: "test",
+        serviceInstanceId: "test-instance",
+        serviceVersion: "1.2.3",
+      },
+    ).pipe(Layer.provide(layerRemoteHttpClient(fetchFn)));
+    const failure = { durationNanos: 1n };
+    const layerTracedApplication = Layer.effectDiscard(
+      Effect.fail(failure).pipe(
+        Effect.withSpan("mobile.test.failed-span"),
+        withRelayClientTracing,
+        Effect.exit,
+        Effect.flatMap((exit) => {
+          const reason = exit._tag === "Failure" ? exit.cause.reasons[0] : undefined;
+          return reason && Cause.isFailReason(reason)
+            ? Effect.sync(() => {
+                expect(reason.error).toBe(failure);
+              })
+            : Effect.die(new Error("Expected the original typed failure."));
+        }),
+      ),
+    ).pipe(Layer.provide(layerTracing));
 
-  return Layer.build(layerTracedApplication).pipe(
-    Effect.scoped,
-    Effect.andThen(
-      Effect.sync(() => {
-        expect(fetchFn).toHaveBeenCalledOnce();
-        expect(new TextDecoder().decode(fetchFn.mock.calls[0]?.[1]?.body as Uint8Array)).toContain(
-          "mobile.test.failed-span",
-        );
-      }),
-    ),
-  );
-});
+    return Layer.build(layerTracedApplication).pipe(
+      Effect.scoped,
+      Effect.andThen(
+        Effect.sync(() => {
+          expect(fetchFn).toHaveBeenCalledTimes(exports);
+          if (exports === 0) return;
+          expect(
+            new TextDecoder().decode(fetchFn.mock.calls[0]?.[1]?.body as Uint8Array),
+          ).toContain("mobile.test.failed-span");
+        }),
+      ),
+      Effect.ensuring(Effect.sync(() => setDiagnosticsSendingEnabled(false))),
+    );
+  },
+);

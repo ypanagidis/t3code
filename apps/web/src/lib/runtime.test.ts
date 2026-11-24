@@ -40,9 +40,9 @@ describe("web runtime relay telemetry policy", () => {
       exports: false,
     },
     {
-      surface: "ordinary browser ignores host opt-out",
+      surface: "ordinary browser, which cannot opt in",
       desktopBridge: undefined,
-      exports: true,
+      exports: false,
     },
   ])("applies $surface before the first relay span", async ({ desktopBridge, exports }) => {
     vi.resetModules();
