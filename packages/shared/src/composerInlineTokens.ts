@@ -1,0 +1,211 @@
+import { collectComposerContextReferences } from "./composerContextReferences.ts";
+import { composerFileLinkPath } from "./composerTrigger.ts";
+import { fileBasename } from "./path.ts";
+
+/** The formulas a Markdown parser finds in text, as source offsets. */
+export type FindMathRanges = (
+  text: string,
+) => ReadonlyArray<{ readonly start: number; readonly end: number }>;
+
+export type ComposerInlineToken =
+  | {
+      readonly type: "mention";
+      readonly value: string;
+      readonly source: string;
+      readonly start: number;
+      readonly end: number;
+    }
+  | {
+      readonly type: "skill";
+      readonly value: string;
+      readonly source: string;
+      readonly start: number;
+      readonly end: number;
+    };
+
+export interface CollectComposerInlineTokensOptions {
+  readonly preserveTrailingFrom?: ReadonlyArray<ComposerInlineToken>;
+  /** Formulas keep their literal tokens; without it, nothing is read as math. */
+  readonly findMath?: FindMathRanges;
+}
+
+const SKILL_MENTION_SOURCE =
+  /(^|\s)\p{Sc}(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])([a-zA-Z0-9][a-zA-Z0-9:_-]*)/u
+    .source;
+const SKILL_TOKEN_REGEX = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s)`, "gu");
+export const SKILL_MENTION_PATTERN = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s|$)`, "gu");
+const MENTION_TOKEN_REGEX = /(^|\s)@(?:"((?:\\.|[^"\\])*)"|([^\s@"]+))(?=\s)/g;
+// Bound unmatched-bracket rescans to avoid quadratic work; only basenames survive, and common filesystems cap them at 255.
+const MAX_FILE_LINK_LABEL_LENGTH = 512;
+const FILE_LINK_TOKEN_REGEX = new RegExp(
+  `(^|\\s)\\[((?:\\\\.|&#9[13];|&(?!#9[13];)|[^[\\]\\\\&]){0,${MAX_FILE_LINK_LABEL_LENGTH}})\\]\\(([^)\\s]+)\\)(?=\\s)`,
+  "g",
+);
+const URI_SCHEME_REGEX = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
+const SCOPED_PACKAGE_REFERENCE_REGEX =
+  /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:\/[^\s@"]+)*$/;
+const DECORATOR_CALL_REFERENCE_REGEX = /^[\p{ID_Start}_$][\p{ID_Continue}.$\u200c\u200d]*\(/u;
+
+function collectMentionTokens(text: string): ComposerInlineToken[] {
+  const matches: ComposerInlineToken[] = [];
+
+  for (const match of text.matchAll(FILE_LINK_TOKEN_REGEX)) {
+    const fullMatch = match[0];
+    const prefix = match[1] ?? "";
+    const label = (match[2] ?? "").replace(
+      /\\(.)|&#9(1|3);/g,
+      (_match, escaped?: string, code?: string) => escaped ?? (code === "1" ? "[" : "]"),
+    );
+    const encodedPath = match[3] ?? "";
+    if (encodedPath.startsWith("//")) {
+      continue;
+    }
+    let path = encodedPath;
+    try {
+      path = decodeURIComponent(encodedPath);
+    } catch {}
+    const hasExternalScheme = URI_SCHEME_REGEX.test(path) && !WINDOWS_DRIVE_PATH_REGEX.test(path);
+    path = composerFileLinkPath(encodedPath, path);
+    const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const basename = separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
+    if (!path || hasExternalScheme || label !== basename) {
+      continue;
+    }
+    const start = (match.index ?? 0) + prefix.length;
+    const end = start + fullMatch.length - prefix.length;
+    matches.push({
+      type: "mention",
+      value: path,
+      source: text.slice(start, end),
+      start,
+      end,
+    });
+  }
+
+  for (const match of text.matchAll(MENTION_TOKEN_REGEX)) {
+    const fullMatch = match[0];
+    const prefix = match[1] ?? "";
+    const quotedPath = match[2];
+    const path =
+      quotedPath !== undefined ? quotedPath.replace(/\\(["\\])/g, "$1") : (match[3] ?? "");
+    if (
+      !path ||
+      (quotedPath === undefined &&
+        (SCOPED_PACKAGE_REFERENCE_REGEX.test(path) || DECORATOR_CALL_REFERENCE_REGEX.test(path)))
+    ) {
+      continue;
+    }
+    const start = (match.index ?? 0) + prefix.length;
+    const end = start + fullMatch.length - prefix.length;
+    matches.push({
+      type: "mention",
+      value: path,
+      source: text.slice(start, end),
+      start,
+      end,
+    });
+  }
+
+  return matches;
+}
+
+/**
+ * Formulas in composer text, ignoring `$` and `\[` inside file links such as `posts.$postId.tsx`
+ * and `t3-context://` references. Links are masked with letters, not spaces, so a leading link
+ * cannot become an indented code block. Bare `@path` mentions stay unmasked so `@README.md$` can
+ * still close a formula.
+ */
+export function composerMathRanges(
+  text: string,
+  findMath: FindMathRanges,
+  mentions: ReadonlyArray<ComposerInlineToken> = collectMentionTokens(text),
+) {
+  const links = [
+    ...mentions.filter((mention) => mention.type === "mention" && mention.source.startsWith("[")),
+    ...collectComposerContextReferences(text),
+  ];
+  let masked = text;
+  for (const { start, end } of links) {
+    masked = masked.slice(0, start) + "x".repeat(end - start) + masked.slice(end);
+  }
+  return findMath(masked).map(({ start, end }) => ({
+    start,
+    end,
+    source: text.slice(start, end),
+  }));
+}
+
+export function collectComposerInlineTokens(
+  text: string,
+  options: CollectComposerInlineTokensOptions = {},
+): ReadonlyArray<ComposerInlineToken> {
+  const matches = collectMentionTokens(text);
+
+  for (const match of text.matchAll(SKILL_TOKEN_REGEX)) {
+    const fullMatch = match[0];
+    const prefix = match[1] ?? "";
+    const value = match[2] ?? "";
+    if (!value) {
+      continue;
+    }
+    const start = (match.index ?? 0) + prefix.length;
+    const end = start + fullMatch.length - prefix.length;
+    matches.push({
+      type: "skill",
+      value,
+      source: text.slice(start, end),
+      start,
+      end,
+    });
+  }
+
+  for (const token of options.preserveTrailingFrom ?? []) {
+    if (
+      token.end === text.length &&
+      text.slice(token.start, token.end) === token.source &&
+      !matches.some(
+        (match) =>
+          match.type === token.type && match.start === token.start && match.end === token.end,
+      )
+    ) {
+      matches.push(token);
+    }
+  }
+
+  // TeX can contain literal skill and file tokens, especially inside \text{}.
+  // They remain formula source rather than becoming composer context chips.
+  // Confirmed trailing file links are masked too, so a kept chip is not read as TeX.
+  const math =
+    matches.length > 0 && options.findMath
+      ? composerMathRanges(text, options.findMath, matches)
+      : [];
+  const sorted = matches
+    .filter(
+      (match) => !math.some((formula) => match.start < formula.end && match.end > formula.start),
+    )
+    .sort((left, right) => left.start - right.start || right.end - left.end);
+  const resolved: ComposerInlineToken[] = [];
+  let cursor = 0;
+  for (const token of sorted) {
+    if (token.start < cursor) {
+      continue;
+    }
+    resolved.push(token);
+    cursor = token.end;
+  }
+  return resolved;
+}
+
+/** Shows each `@`-file link by its file name, as its composer chip does, for one-line previews. */
+export function composerFileLinksToPlainText(text: string): string {
+  let result = "";
+  let cursor = 0;
+  // The composer reads a link as a mention only before whitespace, so one may end the text.
+  for (const token of collectMentionTokens(`${text} `)) {
+    if (!token.source.startsWith("[")) continue;
+    result += text.slice(cursor, token.start) + fileBasename(token.value);
+    cursor = token.end;
+  }
+  return result + text.slice(cursor);
+}

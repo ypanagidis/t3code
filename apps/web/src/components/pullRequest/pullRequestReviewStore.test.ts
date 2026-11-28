@@ -1,0 +1,94 @@
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { ProjectId } from "@t3tools/contracts";
+
+import {
+  type PendingReviewComment,
+  pullRequestReviewKey,
+  usePullRequestReviewStore,
+} from "./pullRequestReviewStore";
+import { createMemoryStorage } from "../../lib/storage";
+
+function comment(id: string, body = id): PendingReviewComment {
+  return { id, body, path: "src/app.ts", position: { kind: "added", newLine: 1 } };
+}
+
+describe("pull request review drafts", () => {
+  beforeEach(() => {
+    usePullRequestReviewStore.setState({ drafts: {}, summaries: {} });
+  });
+
+  it("removes only the line comments included in a submitted snapshot", () => {
+    const store = usePullRequestReviewStore.getState();
+    store.addComment("review-a", comment("submitted"));
+    const submittedIds =
+      usePullRequestReviewStore.getState().drafts["review-a"]?.map((entry) => entry.id) ?? [];
+
+    usePullRequestReviewStore.getState().addComment("review-a", comment("added-in-flight"));
+    usePullRequestReviewStore.getState().removeComments("review-a", submittedIds);
+
+    expect(usePullRequestReviewStore.getState().drafts["review-a"]).toEqual([
+      comment("added-in-flight"),
+    ]);
+  });
+
+  it("keeps drafts on different hosts separate when a thread reviews the same repository and number", () => {
+    const reference = {
+      projectId: ProjectId.make("project-a"),
+      repository: "owner/repo",
+      number: 7,
+    };
+    const publicKey = pullRequestReviewKey({ ...reference, host: "github.com" });
+    const enterpriseKey = pullRequestReviewKey({ ...reference, host: "github.example.com" });
+    const store = usePullRequestReviewStore.getState();
+    store.addComment(publicKey, comment("public"));
+    store.setSummary(publicKey, "Public review");
+
+    expect(usePullRequestReviewStore.getState().drafts[enterpriseKey]).toBeUndefined();
+    expect(usePullRequestReviewStore.getState().summaries[enterpriseKey]).toBeUndefined();
+
+    store.addComment(enterpriseKey, comment("enterprise"));
+    store.setSummary(enterpriseKey, "Enterprise review");
+    store.clear(enterpriseKey);
+    store.clearSummary(enterpriseKey, "Enterprise review");
+
+    expect(usePullRequestReviewStore.getState().drafts[publicKey]).toEqual([comment("public")]);
+    expect(usePullRequestReviewStore.getState().summaries[publicKey]).toBe("Public review");
+  });
+
+  it("does not clear a summary revised while submission is in flight", () => {
+    const store = usePullRequestReviewStore.getState();
+    store.setSummary("review-a", "Submitted body");
+    usePullRequestReviewStore.getState().setSummary("review-a", "Revised body");
+    usePullRequestReviewStore.getState().clearSummary("review-a", "Submitted body");
+
+    expect(usePullRequestReviewStore.getState().summaries["review-a"]).toBe("Revised body");
+  });
+
+  // regression: #42078 line comments and the summary were lost when the window reloaded
+  it("keeps unsubmitted line comments and the summary across a reload", async () => {
+    vi.stubGlobal("localStorage", createMemoryStorage());
+    vi.useFakeTimers();
+    vi.resetModules();
+    try {
+      const before = await import("./pullRequestReviewStore");
+      before.usePullRequestReviewStore.getState().addComment("review-a", comment("drafted"));
+      before.usePullRequestReviewStore.getState().setSummary("review-a", "Drafted summary");
+      await vi.runAllTimersAsync();
+
+      vi.resetModules();
+      const after = await import("./pullRequestReviewStore");
+      await vi.runAllTimersAsync();
+
+      expect(after.usePullRequestReviewStore.getState().drafts["review-a"]).toEqual([
+        comment("drafted"),
+      ]);
+      expect(after.usePullRequestReviewStore.getState().summaries["review-a"]).toBe(
+        "Drafted summary",
+      );
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+});
