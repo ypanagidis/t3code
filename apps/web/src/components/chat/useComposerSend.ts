@@ -22,6 +22,7 @@ import {
   makeThreadErrorSetter,
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
+import { isSkillReloadCommand } from "@t3tools/client-runtime/providerSkills";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
@@ -97,7 +98,8 @@ import {
   previewAnnotationContextReference,
   responseContextReference,
 } from "../../lib/composerContextRecords";
-import { environmentServerConfigsAtom } from "../../state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { threadEnvironment } from "../../state/threads";
 import { runMobileComposerTransition } from "./draftHeroTransition";
 import { useClientSettingsHydrated } from "../../hooks/useSettings";
@@ -394,6 +396,9 @@ export function useComposerSend(input: ComposerSendInput) {
     reportFailure: false,
   });
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
+    reportFailure: false,
+  });
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -912,6 +917,8 @@ export function useComposerSend(input: ComposerSendInput) {
           },
           clearDraft: () => {
             clearComposerDraftContent(composerDraftTarget);
+            // The reply waits in the bar for the next message.
+            if (replyTo) useComposerDraftStore.getState().setReplyTo(composerDraftTarget, replyTo);
             if (currentRouteThreadKeyRef.current === routeThreadKey) {
               promptRef.current = "";
               composerRef.current?.resetCursorState();
@@ -1390,6 +1397,7 @@ export function useComposerSend(input: ComposerSendInput) {
       setSetupQueueSendThreadKey(activeThreadKey);
     } else if (isCurrentRouteThread()) {
       beginLocalDispatch({
+        providerInstanceId: ctxSelectedModelSelection.instanceId,
         preparingWorktree: multipleModelSelections !== null || Boolean(baseBranchForWorktree),
         submissionIntent:
           submissionIntent === "background" && !isLocalDraftThread
@@ -1640,6 +1648,16 @@ export function useComposerSend(input: ComposerSendInput) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (isSkillReloadCommand(trimmed)) {
+          void refreshProviders({
+            environmentId,
+            input: {
+              instanceId: ctxSelectedModelSelection.instanceId,
+              cwd: activeThread.worktreePath ?? activeProject.workspaceRoot,
+              fresh: true,
+            },
+          });
+        }
         if (checkoutPullRequestUrl) {
           linkCheckoutPullRequest(
             scopeThreadRef(environmentId, threadIdForSend),
@@ -1802,6 +1820,13 @@ export function useComposerSend(input: ComposerSendInput) {
   };
 
   const onSendLatest = useStableCallback(onSend);
+  const reportDraftChangedBeforeSend = () => {
+    if (currentRouteThreadKeyRef.current !== routeThreadKey || !activeThread) return;
+    setThreadError(
+      activeThread.id,
+      m(msg("Draft changed while preparing this message. Review it and send again.")),
+    );
+  };
   const waitBeforeSend = async <T>(pending: Promise<T>) => {
     const finishWatching = watchComposerSendEdits(composerDraftTarget);
     const fanoutSelectionsAtom = draftFanoutSelectionsAtom(routeThreadKey);
@@ -1822,12 +1847,7 @@ export function useComposerSend(input: ComposerSendInput) {
         ? "edited"
         : watchedStatus;
     const sameRoute = currentRouteThreadKeyRef.current === routeThreadKey;
-    if (draftStatus === "edited" && sameRoute && activeThread) {
-      setThreadError(
-        activeThread.id,
-        m(msg("Draft changed while preparing this message. Review it and send again.")),
-      );
-    }
+    if (draftStatus === "edited") reportDraftChangedBeforeSend();
     return { result, draftReady: draftStatus === "ready", sameRoute };
   };
   const sendWithEnvironmentRefresh = async (...args: Parameters<typeof onSend>) => {
@@ -1846,7 +1866,8 @@ export function useComposerSend(input: ComposerSendInput) {
       draftId && !sendInFlightRef.current ? readPendingWorkspaceDefault(draftId) : null;
     if (workspaceDefault === null) return sendWithEnvironmentRefresh(...args);
     const { result, draftReady, sameRoute } = await waitBeforeSend(workspaceDefault);
-    if (result === false || !draftReady || !sameRoute) return;
+    if (result === "moved") reportDraftChangedBeforeSend();
+    if (result === false || result === "moved" || !draftReady || !sameRoute) return;
     return sendWithEnvironmentRefreshLatest(...args);
   };
   // No load-balancing refresh: it bails once the draft is no longer displayed, which is the

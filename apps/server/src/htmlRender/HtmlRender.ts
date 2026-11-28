@@ -107,9 +107,9 @@ const CSS_SOURCE =
   /<!--[\s\S]*?(?:-->|$)|<style\b[^>]*(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|\sstyle\s*=\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\s>]+))/gi;
 // vb and vmax follow the frame height too; vmin stays, as the frame width caps it.
 // The lookbehind skips base64 runs, such as an inlined image that happens to contain "1vh",
-// and identifiers such as the class `.h-100vmax`, while a negative `-50vh` still counts.
+// and identifiers such as `.h-100vmax` or `.h\+100vh`, while signed and scientific-notation lengths still count.
 const VIEWPORT_HEIGHT_UNIT =
-  /(?<![\w.+/]|[\w-]-)(?:\d+(?:\.\d+)?|\.\d+)[sld]?v(?:h|b|max)(?![\w-])/i;
+  /(?<![\w.+/\\-])[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?[sld]?v(?:h|b|max)(?![\w-])/i;
 
 const rejectViewportHeight = (html: string) => {
   for (const [, sheet, doubleQuoted, singleQuoted, unquoted] of html.matchAll(CSS_SOURCE)) {
@@ -211,7 +211,9 @@ const findLocalImages = (html: string) =>
     // Preserve raw text and quoted attributes; blank only comments without shifting offsets.
     html
       .replace(HTML_COMMENT_CONTEXT, (source) =>
-        source.startsWith("<!--") ? source.replace(/[^\r\n]/g, " ") : source,
+        source.startsWith("<!--")
+          ? source.replace(/[^\r\n]+/g, (run) => " ".repeat(run.length))
+          : source,
       )
       .matchAll(LOCAL_IMAGE_PATTERN),
   ).flatMap((match) => {
